@@ -1,0 +1,43 @@
+"""Format JSON de la pièce, partagé par l'extraction, le générateur et l'évaluation."""
+
+from generateur_devis.schema.piece import (
+    VERSION_SCHEMA,
+    Aile,
+    Anomalie,
+    Champ,
+    CoinCoupe,
+    Composant,
+    Contours,
+    Cote,
+    Encombrement,
+    Identification,
+    Matiere,
+    Note,
+    PieceExtraite,
+    Pli,
+    ProfilPliage,
+    Source,
+    Traitement,
+    Trou,
+)
+
+__all__ = [
+    "VERSION_SCHEMA",
+    "Aile",
+    "Anomalie",
+    "Champ",
+    "CoinCoupe",
+    "Composant",
+    "Contours",
+    "Cote",
+    "Encombrement",
+    "Identification",
+    "Matiere",
+    "Note",
+    "PieceExtraite",
+    "Pli",
+    "ProfilPliage",
+    "Source",
+    "Traitement",
+    "Trou",
+]

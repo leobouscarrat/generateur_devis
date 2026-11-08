@@ -23,3 +23,6 @@ results/
 
 # Documents de l'exercice (confidentiels, hors dépôt)
 exercise_information/
+
+# Données privées (annotations de plans non versionnés, ex. piece_003)
+data/prive/

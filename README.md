@@ -48,17 +48,37 @@ L'IA sert à **lire et comprendre le plan**. Elle ne calcule **ni la géométrie
 | [docs/evaluation.md](docs/evaluation.md) | Protocole d'évaluation de l'extraction : jeux de données, dégradations, indicateurs, modèles, budget |
 | [docs/architecture.md](docs/architecture.md) | Architecture : parcours utilisateur, services, flux de données, gestion des erreurs, traçabilité et confidentialité, stack proposée |
 
+## Démarrage
+
+Prérequis : [uv](https://docs.astral.sh/uv/) et Python 3.12 ou plus.
+
+```bash
+uv sync                                          # installe les dépendances
+cp .env.example .env                             # puis renseigner les clés d'API
+uv run pytest                                    # lance les tests
+uv run python -m generateur_devis.schema.export  # régénère le JSON Schema de la pièce
+```
+
 ## Structure du dépôt
 
 ```
 .
 ├── README.md
+├── pyproject.toml
 ├── docs/
 │   ├── logique_metier.md        # Guide de la logique de chiffrage
 │   ├── sources_donnees.md       # Référentiels de données du chiffrage
 │   ├── architecture.md          # Architecture fonctionnelle et technique
 │   └── evaluation.md            # Protocole d'évaluation de l'extraction
-└── exercise_information/        # Énoncé et documents fournis (local uniquement, non versionné)
+├── src/generateur_devis/
+│   └── schema/                  # Format JSON de la pièce (Pydantic), partagé par tout le projet
+├── schemas/
+│   └── piece_extraite.schema.json  # Export JSON Schema du format (généré)
+├── exemples/
+│   └── equerre_fictive.json     # Exemple de pièce au format
+├── tests/
+├── data/prive/                  # Annotations de plans non versionnés (local uniquement)
+└── exercise_information/        # Énoncé et documents fournis (local uniquement)
 ```
 
 ## Avancement
@@ -68,7 +88,7 @@ Le projet est découpé en deux parties.
 **Partie 1 — Évaluation de la qualité de l'extraction** (en cours, voir [docs/evaluation.md](docs/evaluation.md))
 
 - [x] Protocole d'évaluation
-- [ ] Format de sortie (schéma JSON de la pièce)
+- [x] Format de sortie : schéma JSON de la pièce ([src/generateur_devis/schema/piece.py](src/generateur_devis/schema/piece.py))
 - [ ] Générateur de pièces de tôlerie et mise en plan
 - [ ] Dégradations (image, scan, photo, plans erronés)
 - [ ] Jeu de vrais plans annotés

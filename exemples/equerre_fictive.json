@@ -1,0 +1,62 @@
+{
+  "version_schema": "1.0",
+  "unites": {"valeur": "mm"},
+  "identification": {
+    "reference": {"valeur": "EQ-0042"},
+    "designation": {"valeur": "EQUERRE DE FIXATION"},
+    "indice": {"valeur": "A"}
+  },
+  "matiere": {
+    "designation": {"valeur": "S235JR"},
+    "famille": {"valeur": "acier"},
+    "epaisseur": {"valeur": 2.0}
+  },
+  "encombrement": {
+    "longueur": {"valeur": 80.0},
+    "largeur": {"valeur": 50.0},
+    "hauteur": {"valeur": 40.0}
+  },
+  "profil_pliage": {
+    "cotation": "exterieure",
+    "elements": [
+      {"type": "aile", "longueur": 80.0},
+      {"type": "pli", "angle": 90.0, "sens": "haut", "rayon_interieur": null},
+      {"type": "aile", "longueur": 50.0}
+    ],
+    "rayon_pliage_general": 2.0
+  },
+  "contours": {
+    "trous": [
+      {"forme": "rond", "diametre": 6.5, "quantite": 2},
+      {"forme": "oblong", "longueur": 20.0, "largeur": 8.0, "quantite": 1}
+    ],
+    "coins": [
+      {"type": "rayon", "rayon": 5.0, "quantite": 2}
+    ],
+    "autres_decoupes": []
+  },
+  "composants": [],
+  "traitement": {
+    "designation": {"valeur": "Zingage blanc"},
+    "type": {"valeur": "zingage"},
+    "zones_epargne": []
+  },
+  "tolerance_generale": {"valeur": "ISO 2768-m"},
+  "notes": [
+    {"texte": "RAYON DE PLIAGE INTERIEUR : 2 mm", "categorie": "pliage"},
+    {"texte": "EBAVURER TOUTES LES ARETES", "categorie": "general"}
+  ],
+  "cotes": [
+    {"valeur": 80.0, "texte": "80"},
+    {"valeur": 50.0, "texte": "50"},
+    {"valeur": 40.0, "texte": "40"},
+    {"valeur": 2.0, "texte": "2"},
+    {"valeur": 6.5, "type": "diametre", "quantite": 2, "texte": "2x Ø6,5"},
+    {"valeur": 20.0, "texte": "20"},
+    {"valeur": 8.0, "texte": "8"},
+    {"valeur": 5.0, "type": "rayon", "quantite": 2, "texte": "2x R5"},
+    {"valeur": 15.0, "texte": "15"},
+    {"valeur": 25.0, "texte": "25"}
+  ],
+  "anomalies": []
+}

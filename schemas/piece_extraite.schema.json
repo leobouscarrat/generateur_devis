@@ -1,0 +1,1151 @@
+{
+  "$defs": {
+    "Aile": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "aile",
+          "default": "aile",
+          "title": "Type",
+          "type": "string"
+        },
+        "longueur": {
+          "description": "Longueur de l'aile, dans l'unité du plan.",
+          "exclusiveMinimum": 0,
+          "title": "Longueur",
+          "type": "number"
+        }
+      },
+      "required": [
+        "longueur"
+      ],
+      "title": "Aile",
+      "type": "object"
+    },
+    "Anomalie": {
+      "additionalProperties": false,
+      "description": "Problème signalé par l'IA plutôt que de deviner une valeur.",
+      "properties": {
+        "type": {
+          "enum": [
+            "information_manquante",
+            "incoherence",
+            "illisible",
+            "autre"
+          ],
+          "title": "Type",
+          "type": "string"
+        },
+        "champ": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Champ concerné, ex. « matiere.designation ».",
+          "title": "Champ"
+        },
+        "description": {
+          "title": "Description",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "description"
+      ],
+      "title": "Anomalie",
+      "type": "object"
+    },
+    "Champ_Literal__acier____inox____aluminium____cuivre____laiton____titane____autre___": {
+      "additionalProperties": false,
+      "properties": {
+        "valeur": {
+          "anyOf": [
+            {
+              "enum": [
+                "acier",
+                "inox",
+                "aluminium",
+                "cuivre",
+                "laiton",
+                "titane",
+                "autre"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Valeur lue sur le plan, ou null si absente.",
+          "title": "Valeur"
+        },
+        "confiance": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Confiance dans la lecture, de 0 (aucune) à 1 (certaine).",
+          "title": "Confiance"
+        },
+        "source": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Source"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Endroit du plan où la valeur a été lue."
+        }
+      },
+      "title": "Champ[Literal['acier', 'inox', 'aluminium', 'cuivre', 'laiton', 'titane', 'autre']]",
+      "type": "object"
+    },
+    "Champ_Literal__aucun____peinture____thermolaquage____cataphorese____zingage____galvanisation____anodisation____passivation____autre___": {
+      "additionalProperties": false,
+      "properties": {
+        "valeur": {
+          "anyOf": [
+            {
+              "enum": [
+                "aucun",
+                "peinture",
+                "thermolaquage",
+                "cataphorese",
+                "zingage",
+                "galvanisation",
+                "anodisation",
+                "passivation",
+                "autre"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Valeur lue sur le plan, ou null si absente.",
+          "title": "Valeur"
+        },
+        "confiance": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Confiance dans la lecture, de 0 (aucune) à 1 (certaine).",
+          "title": "Confiance"
+        },
+        "source": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Source"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Endroit du plan où la valeur a été lue."
+        }
+      },
+      "title": "Champ[Literal['aucun', 'peinture', 'thermolaquage', 'cataphorese', 'zingage', 'galvanisation', 'anodisation', 'passivation', 'autre']]",
+      "type": "object"
+    },
+    "Champ_Literal__mm____in___": {
+      "additionalProperties": false,
+      "properties": {
+        "valeur": {
+          "anyOf": [
+            {
+              "enum": [
+                "mm",
+                "in"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Valeur lue sur le plan, ou null si absente.",
+          "title": "Valeur"
+        },
+        "confiance": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Confiance dans la lecture, de 0 (aucune) à 1 (certaine).",
+          "title": "Confiance"
+        },
+        "source": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Source"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Endroit du plan où la valeur a été lue."
+        }
+      },
+      "title": "Champ[Literal['mm', 'in']]",
+      "type": "object"
+    },
+    "Champ_float_": {
+      "additionalProperties": false,
+      "properties": {
+        "valeur": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Valeur lue sur le plan, ou null si absente.",
+          "title": "Valeur"
+        },
+        "confiance": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Confiance dans la lecture, de 0 (aucune) à 1 (certaine).",
+          "title": "Confiance"
+        },
+        "source": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Source"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Endroit du plan où la valeur a été lue."
+        }
+      },
+      "title": "Champ[float]",
+      "type": "object"
+    },
+    "Champ_str_": {
+      "additionalProperties": false,
+      "properties": {
+        "valeur": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Valeur lue sur le plan, ou null si absente.",
+          "title": "Valeur"
+        },
+        "confiance": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Confiance dans la lecture, de 0 (aucune) à 1 (certaine).",
+          "title": "Confiance"
+        },
+        "source": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Source"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Endroit du plan où la valeur a été lue."
+        }
+      },
+      "title": "Champ[str]",
+      "type": "object"
+    },
+    "CoinCoupe": {
+      "additionalProperties": false,
+      "description": "Chanfrein ou rayon sur un coin du contour extérieur.",
+      "properties": {
+        "confiance": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Confiance dans la lecture, de 0 (aucune) à 1 (certaine).",
+          "title": "Confiance"
+        },
+        "source": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Source"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Endroit du plan où l'élément a été lu."
+        },
+        "type": {
+          "enum": [
+            "chanfrein",
+            "rayon"
+          ],
+          "title": "Type",
+          "type": "string"
+        },
+        "cote1": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Première cote d'un chanfrein (20 pour « 20x20 »).",
+          "title": "Cote1"
+        },
+        "cote2": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Seconde cote d'un chanfrein.",
+          "title": "Cote2"
+        },
+        "rayon": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Rayon d'un coin arrondi.",
+          "title": "Rayon"
+        },
+        "quantite": {
+          "default": 1,
+          "description": "Nombre de coins identiques.",
+          "minimum": 1,
+          "title": "Quantite",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "title": "CoinCoupe",
+      "type": "object"
+    },
+    "Composant": {
+      "additionalProperties": false,
+      "description": "Composant acheté ajouté à la pièce (nomenclature).",
+      "properties": {
+        "confiance": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Confiance dans la lecture, de 0 (aucune) à 1 (certaine).",
+          "title": "Confiance"
+        },
+        "source": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Source"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Endroit du plan où l'élément a été lu."
+        },
+        "designation": {
+          "description": "Désignation telle qu'écrite dans la nomenclature.",
+          "title": "Designation",
+          "type": "string"
+        },
+        "type": {
+          "enum": [
+            "ecrou_a_sertir",
+            "goujon_a_sertir",
+            "entretoise_a_sertir",
+            "insert",
+            "rivet",
+            "autre"
+          ],
+          "title": "Type",
+          "type": "string"
+        },
+        "filetage": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Filetage, ex. « M6 ».",
+          "title": "Filetage"
+        },
+        "quantite": {
+          "default": 1,
+          "minimum": 1,
+          "title": "Quantite",
+          "type": "integer"
+        },
+        "norme": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Norme ou spécification de pose citée sur le plan.",
+          "title": "Norme"
+        }
+      },
+      "required": [
+        "designation",
+        "type"
+      ],
+      "title": "Composant",
+      "type": "object"
+    },
+    "Contours": {
+      "additionalProperties": false,
+      "properties": {
+        "trous": {
+          "description": "Trous et découpes intérieures.",
+          "items": {
+            "$ref": "#/$defs/Trou"
+          },
+          "title": "Trous",
+          "type": "array"
+        },
+        "coins": {
+          "description": "Chanfreins et rayons de coin.",
+          "items": {
+            "$ref": "#/$defs/CoinCoupe"
+          },
+          "title": "Coins",
+          "type": "array"
+        },
+        "autres_decoupes": {
+          "description": "Découpes ou formes particulières non décrites ailleurs, en texte libre.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Autres Decoupes",
+          "type": "array"
+        }
+      },
+      "title": "Contours",
+      "type": "object"
+    },
+    "Cote": {
+      "additionalProperties": false,
+      "description": "Une cote lue sur le plan, telle qu'écrite, sans interprétation.",
+      "properties": {
+        "confiance": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Confiance dans la lecture, de 0 (aucune) à 1 (certaine).",
+          "title": "Confiance"
+        },
+        "source": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Source"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Endroit du plan où l'élément a été lu."
+        },
+        "valeur": {
+          "description": "Valeur principale de la cote.",
+          "title": "Valeur",
+          "type": "number"
+        },
+        "type": {
+          "default": "lineaire",
+          "enum": [
+            "lineaire",
+            "diametre",
+            "rayon",
+            "angle",
+            "chanfrein"
+          ],
+          "title": "Type",
+          "type": "string"
+        },
+        "quantite": {
+          "default": 1,
+          "description": "Multiplicateur écrit devant la cote (« 2x » → 2).",
+          "minimum": 1,
+          "title": "Quantite",
+          "type": "integer"
+        },
+        "tolerance": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Tolérance écrite avec la cote.",
+          "title": "Tolerance"
+        },
+        "theorique": {
+          "default": false,
+          "description": "Cote encadrée (cote théorique exacte).",
+          "title": "Theorique",
+          "type": "boolean"
+        },
+        "texte": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Texte brut de la cote, ex. « 2X Ø8,75 +0,1/0 ».",
+          "title": "Texte"
+        }
+      },
+      "required": [
+        "valeur"
+      ],
+      "title": "Cote",
+      "type": "object"
+    },
+    "Encombrement": {
+      "additionalProperties": false,
+      "description": "Dimensions hors-tout de la pièce finie (pliée), dans l'unité du plan.",
+      "properties": {
+        "longueur": {
+          "$ref": "#/$defs/Champ_float_",
+          "description": "Plus grande dimension."
+        },
+        "largeur": {
+          "$ref": "#/$defs/Champ_float_",
+          "description": "Deuxième dimension."
+        },
+        "hauteur": {
+          "$ref": "#/$defs/Champ_float_",
+          "description": "Troisième dimension (hauteur de la pièce pliée, ou épaisseur si pièce plate)."
+        }
+      },
+      "title": "Encombrement",
+      "type": "object"
+    },
+    "Identification": {
+      "additionalProperties": false,
+      "properties": {
+        "reference": {
+          "$ref": "#/$defs/Champ_str_",
+          "description": "Référence ou numéro de pièce (cartouche)."
+        },
+        "designation": {
+          "$ref": "#/$defs/Champ_str_",
+          "description": "Désignation de la pièce (cartouche ou nomenclature), ex. « SUPPORT »."
+        },
+        "indice": {
+          "$ref": "#/$defs/Champ_str_",
+          "description": "Indice de révision du plan, ex. « C »."
+        }
+      },
+      "title": "Identification",
+      "type": "object"
+    },
+    "Matiere": {
+      "additionalProperties": false,
+      "properties": {
+        "designation": {
+          "$ref": "#/$defs/Champ_str_",
+          "description": "Matière telle qu'écrite sur le plan, ex. « S235JR », « 6061-T6 Aluminum »."
+        },
+        "famille": {
+          "$ref": "#/$defs/Champ_Literal__acier____inox____aluminium____cuivre____laiton____titane____autre___",
+          "description": "Famille de la matière, déduite de la désignation. Null si matière absente."
+        },
+        "epaisseur": {
+          "$ref": "#/$defs/Champ_float_",
+          "description": "Épaisseur de la tôle, dans l'unité du plan."
+        }
+      },
+      "title": "Matiere",
+      "type": "object"
+    },
+    "Note": {
+      "additionalProperties": false,
+      "properties": {
+        "confiance": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Confiance dans la lecture, de 0 (aucune) à 1 (certaine).",
+          "title": "Confiance"
+        },
+        "source": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Source"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Endroit du plan où l'élément a été lu."
+        },
+        "texte": {
+          "description": "Texte de la note. Pour une note bilingue, recopier une seule langue (la première).",
+          "title": "Texte",
+          "type": "string"
+        },
+        "categorie": {
+          "enum": [
+            "pliage",
+            "traitement",
+            "assemblage",
+            "tolerance",
+            "matiere",
+            "general"
+          ],
+          "title": "Categorie",
+          "type": "string"
+        }
+      },
+      "required": [
+        "texte",
+        "categorie"
+      ],
+      "title": "Note",
+      "type": "object"
+    },
+    "Pli": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "pli",
+          "default": "pli",
+          "title": "Type",
+          "type": "string"
+        },
+        "angle": {
+          "description": "Angle de pliage en degrés = déviation par rapport à la tôle à plat. 90 pour une équerre (et non l'angle intérieur restant entre les ailes).",
+          "exclusiveMinimum": 0,
+          "maximum": 180,
+          "title": "Angle",
+          "type": "number"
+        },
+        "sens": {
+          "default": "inconnu",
+          "description": "Sens du pli en parcourant le profil de gauche à droite.",
+          "enum": [
+            "haut",
+            "bas",
+            "inconnu"
+          ],
+          "title": "Sens",
+          "type": "string"
+        },
+        "rayon_interieur": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Rayon intérieur de ce pli s'il est coté, sinon null.",
+          "title": "Rayon Interieur"
+        }
+      },
+      "required": [
+        "angle"
+      ],
+      "title": "Pli",
+      "type": "object"
+    },
+    "ProfilPliage": {
+      "additionalProperties": false,
+      "description": "Profil de la pièce vu de côté, pour des plis parallèles.\n\nSéquence alternée aile → pli → aile → … qui commence et finit par une aile.\nExemple d'un Z : aile 18 → pli 90° haut → aile 22 → pli 90° bas → aile 42.\nUne pièce plate a une seule aile.",
+      "properties": {
+        "confiance": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Confiance dans la lecture, de 0 (aucune) à 1 (certaine).",
+          "title": "Confiance"
+        },
+        "source": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Source"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Endroit du plan où l'élément a été lu."
+        },
+        "cotation": {
+          "default": "inconnue",
+          "description": "Les longueurs d'ailes sont-elles cotées à l'extérieur ou à l'intérieur ?",
+          "enum": [
+            "exterieure",
+            "interieure",
+            "inconnue"
+          ],
+          "title": "Cotation",
+          "type": "string"
+        },
+        "elements": {
+          "description": "Ailes et plis, en alternance, de gauche à droite sur la vue de côté.",
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "aile": "#/$defs/Aile",
+                "pli": "#/$defs/Pli"
+              },
+              "propertyName": "type"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/Aile"
+              },
+              {
+                "$ref": "#/$defs/Pli"
+              }
+            ]
+          },
+          "title": "Elements",
+          "type": "array"
+        },
+        "rayon_pliage_general": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Rayon de pliage donné par une note générale (ex. « BENDING RADIUS 2mm »).",
+          "title": "Rayon Pliage General"
+        }
+      },
+      "required": [
+        "elements"
+      ],
+      "title": "ProfilPliage",
+      "type": "object"
+    },
+    "Source": {
+      "additionalProperties": false,
+      "description": "Endroit du plan où l'information a été lue.",
+      "properties": {
+        "page": {
+          "default": 1,
+          "description": "Numéro de page, à partir de 1.",
+          "minimum": 1,
+          "title": "Page",
+          "type": "integer"
+        },
+        "zone": {
+          "anyOf": [
+            {
+              "maxItems": 4,
+              "minItems": 4,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Zone [x, y, largeur, hauteur] en fraction de la page (de 0 à 1), origine en haut à gauche.",
+          "title": "Zone"
+        }
+      },
+      "title": "Source",
+      "type": "object"
+    },
+    "Traitement": {
+      "additionalProperties": false,
+      "properties": {
+        "designation": {
+          "$ref": "#/$defs/Champ_str_",
+          "description": "Traitement de surface tel qu'écrit sur le plan, ex. « Anodized Type II »."
+        },
+        "type": {
+          "$ref": "#/$defs/Champ_Literal__aucun____peinture____thermolaquage____cataphorese____zingage____galvanisation____anodisation____passivation____autre___",
+          "description": "Type de traitement. « aucun » seulement si le plan l'indique ; null si non précisé."
+        },
+        "zones_epargne": {
+          "description": "Zones à épargner du traitement, ex. « filetages ».",
+          "items": {
+            "type": "string"
+          },
+          "title": "Zones Epargne",
+          "type": "array"
+        }
+      },
+      "title": "Traitement",
+      "type": "object"
+    },
+    "Trou": {
+      "additionalProperties": false,
+      "description": "Un trou ou une découpe intérieure, ou un groupe de trous identiques (« 2x »).",
+      "properties": {
+        "confiance": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Confiance dans la lecture, de 0 (aucune) à 1 (certaine).",
+          "title": "Confiance"
+        },
+        "source": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Source"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Endroit du plan où l'élément a été lu."
+        },
+        "forme": {
+          "default": "rond",
+          "enum": [
+            "rond",
+            "oblong",
+            "carre",
+            "rectangulaire",
+            "autre"
+          ],
+          "title": "Forme",
+          "type": "string"
+        },
+        "diametre": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Diamètre, pour un trou rond.",
+          "title": "Diametre"
+        },
+        "longueur": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Longueur, pour un oblong ou un rectangle.",
+          "title": "Longueur"
+        },
+        "largeur": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Largeur, pour un oblong ou un rectangle.",
+          "title": "Largeur"
+        },
+        "quantite": {
+          "default": 1,
+          "description": "Nombre de trous identiques (« 2x » → 2).",
+          "minimum": 1,
+          "title": "Quantite",
+          "type": "integer"
+        },
+        "tolerance": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Tolérance sur la dimension, ex. « +0,1/0 », « H7 ».",
+          "title": "Tolerance"
+        },
+        "tolerance_geometrique": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Tolérance géométrique associée, ex. « position 0,1 A B ».",
+          "title": "Tolerance Geometrique"
+        },
+        "filetage": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Taraudage éventuel, ex. « M6 ».",
+          "title": "Filetage"
+        }
+      },
+      "title": "Trou",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Toutes les informations utiles au devis, lues sur un plan de tôlerie.",
+  "properties": {
+    "version_schema": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Version Schema",
+      "type": "string"
+    },
+    "unites": {
+      "$ref": "#/$defs/Champ_Literal__mm____in___",
+      "description": "Unité des cotes du plan (mm ou in)."
+    },
+    "identification": {
+      "$ref": "#/$defs/Identification"
+    },
+    "matiere": {
+      "$ref": "#/$defs/Matiere"
+    },
+    "encombrement": {
+      "$ref": "#/$defs/Encombrement"
+    },
+    "profil_pliage": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ProfilPliage"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Profil de pliage. Null si la vue de côté ne permet pas de le déterminer."
+    },
+    "contours": {
+      "$ref": "#/$defs/Contours"
+    },
+    "composants": {
+      "description": "Composants de la nomenclature, hors pièce elle-même.",
+      "items": {
+        "$ref": "#/$defs/Composant"
+      },
+      "title": "Composants",
+      "type": "array"
+    },
+    "traitement": {
+      "$ref": "#/$defs/Traitement"
+    },
+    "tolerance_generale": {
+      "$ref": "#/$defs/Champ_str_",
+      "description": "Tolérance générale, ex. « ISO 2768-m »."
+    },
+    "notes": {
+      "description": "Notes du plan.",
+      "items": {
+        "$ref": "#/$defs/Note"
+      },
+      "title": "Notes",
+      "type": "array"
+    },
+    "cotes": {
+      "description": "Toutes les cotes lues sur le plan.",
+      "items": {
+        "$ref": "#/$defs/Cote"
+      },
+      "title": "Cotes",
+      "type": "array"
+    },
+    "anomalies": {
+      "description": "Informations manquantes, incohérentes ou illisibles. Signaler plutôt que deviner.",
+      "items": {
+        "$ref": "#/$defs/Anomalie"
+      },
+      "title": "Anomalies",
+      "type": "array"
+    }
+  },
+  "title": "PieceExtraite",
+  "type": "object"
+}
