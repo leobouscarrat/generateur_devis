@@ -22,11 +22,13 @@ from generateur_devis.schema import (
     Champ,
     Contours,
     Cote,
+    EtatSurface,
     Identification,
     Matiere,
     Note,
     PieceExtraite,
     Soudure,
+    ToleranceGeometrique,
     Traitement,
 )
 
@@ -76,7 +78,12 @@ def _nombre(texte: str) -> float:
 # --- cadsy : plans réalistes, lecture des cotes -------------------------------------------
 
 URL_CADSY = "https://huggingface.co/datasets/cadsy/cad-technical-drawings/resolve/main"
-CHAMPS_CADSY = ["tolerance_generale", "cotes"]
+CHAMPS_CADSY = [
+    "tolerance_generale",
+    "tolerances_geometriques",
+    "tolerances_geometriques.type",
+    "cotes",
+]
 _ANNOTATION_CADSY = re.compile(r"^(?:(\d+)\s*×\s*)?([⌀RC])\s*(\d+(?:[.,]\d+)?)")
 
 
@@ -127,9 +134,22 @@ def charger_cadsy(partie: str, n_dev: int = 5, n_test: int = 30) -> Jeu:
         tolerance = next(
             (a["text"] for a in annotations if re.match(r"ISO\s*2768", a["text"])), None
         )
+        cadres = []
+        for a in annotations:
+            if a["type"] == "feature_control_frame":
+                type_anglais, valeur, *references = a["text"].split("|")
+                cadres.append(
+                    _tolerance_geometrique(
+                        type_anglais,
+                        _nombre(re.search(r"\d+(?:[.,]\d+)?", valeur).group()),
+                        " ".join(references) or None,
+                        a["text"],
+                    )
+                )
         verite = PieceExtraite(
             unites=Champ(valeur="mm"),
             tolerance_generale=Champ(valeur=tolerance),
+            tolerances_geometriques=cadres,
             cotes=_cotes_cadsy(annotations),
         )
         echantillons.append(Echantillon("cadsy", ligne["part_id"], charger_plan(image), verite))
@@ -150,9 +170,43 @@ CHAMPS_ECADO = [
     "traitement.type",
     "tolerance_generale",
     "soudures",
+    "tolerances_geometriques",
+    "tolerances_geometriques.type",
+    "etats_surface",
     "notes",
     "cotes",
 ]
+
+# Caractéristiques des cadres de tolérance géométrique (anglais → format de la pièce).
+_GEOMETRIQUES = {
+    "flatness": "planeite",
+    "straightness": "rectitude",
+    "circularity": "circularite",
+    "roundness": "circularite",
+    "cylindricity": "cylindricite",
+    "profile_of_a_line": "profil_ligne",
+    "line_profile": "profil_ligne",
+    "profile_of_a_surface": "profil_surface",
+    "surface_profile": "profil_surface",
+    "parallelism": "parallelisme",
+    "perpendicularity": "perpendicularite",
+    "angularity": "inclinaison",
+    "position": "position",
+    "true_position": "position",
+    "concentricity": "concentricite",
+    "symmetry": "symetrie",
+    "runout": "battement",
+    "circular_runout": "battement",
+    "total_runout": "battement_total",
+}
+
+
+def _tolerance_geometrique(type_anglais: str, valeur: float, references: str | None, texte: str):
+    cle = type_anglais.strip().lower().replace(" ", "_")
+    return ToleranceGeometrique(
+        type=_GEOMETRIQUES.get(cle, "autre"), valeur=valeur, references=references, texte=texte
+    )
+
 
 _FAMILLES = [
     ("stainless", "inox"),
@@ -213,6 +267,16 @@ def _verite_ecado(gt: dict) -> PieceExtraite:
                 type_joint=_SOUDURES.get(s["type"], "autre"),
             )
             for s in gt["weld_symbols"]
+        ],
+        tolerances_geometriques=[
+            _tolerance_geometrique(
+                g["type"], g["value"], g.get("datum", "").replace("|", " ") or None, str(g)
+            )
+            for g in gt["gdt_callouts"]
+        ],
+        etats_surface=[
+            EtatSurface(valeur=float(re.search(r"\d+(?:\.\d+)?", e).group()), texte=e)
+            for e in gt["surface_finish"]
         ],
         notes=[Note(texte=n, categorie="general") for n in gt["notes"]],
         cotes=[

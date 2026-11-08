@@ -645,6 +645,62 @@
       "title": "Encombrement",
       "type": "object"
     },
+    "EtatSurface": {
+      "additionalProperties": false,
+      "description": "Une indication de rugosité, ex. « Ra 1,6 µm » ou « 63 RMS ».",
+      "properties": {
+        "confiance": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Confiance dans la lecture, de 0 (aucune) à 1 (certaine).",
+          "title": "Confiance"
+        },
+        "source": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Source"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Endroit du plan où l'élément a été lu."
+        },
+        "valeur": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Valeur numérique de la rugosité.",
+          "title": "Valeur"
+        },
+        "texte": {
+          "description": "Indication telle qu'écrite, ex. « Ra 1.6 µm ».",
+          "title": "Texte",
+          "type": "string"
+        }
+      },
+      "required": [
+        "texte"
+      ],
+      "title": "EtatSurface",
+      "type": "object"
+    },
     "Identification": {
       "additionalProperties": false,
       "properties": {
@@ -1023,6 +1079,105 @@
       "title": "Source",
       "type": "object"
     },
+    "ToleranceGeometrique": {
+      "additionalProperties": false,
+      "description": "Un cadre de tolérance géométrique, ex. « ⌖ 0,1 A B ».",
+      "properties": {
+        "confiance": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Confiance dans la lecture, de 0 (aucune) à 1 (certaine).",
+          "title": "Confiance"
+        },
+        "source": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Source"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Endroit du plan où l'élément a été lu."
+        },
+        "type": {
+          "description": "Caractéristique tolérancée, d'après le symbole du cadre.",
+          "enum": [
+            "planeite",
+            "rectitude",
+            "circularite",
+            "cylindricite",
+            "profil_ligne",
+            "profil_surface",
+            "parallelisme",
+            "perpendicularite",
+            "inclinaison",
+            "position",
+            "concentricite",
+            "symetrie",
+            "battement",
+            "battement_total",
+            "autre"
+          ],
+          "title": "Type",
+          "type": "string"
+        },
+        "valeur": {
+          "description": "Valeur de la tolérance (zone de tolérance).",
+          "title": "Valeur",
+          "type": "number"
+        },
+        "references": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Références (datums) citées dans le cadre, ex. « A B ».",
+          "title": "References"
+        },
+        "quantite": {
+          "default": 1,
+          "description": "Nombre de cadres identiques.",
+          "minimum": 1,
+          "title": "Quantite",
+          "type": "integer"
+        },
+        "texte": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Contenu brut du cadre.",
+          "title": "Texte"
+        }
+      },
+      "required": [
+        "type",
+        "valeur"
+      ],
+      "title": "ToleranceGeometrique",
+      "type": "object"
+    },
     "Traitement": {
       "additionalProperties": false,
       "properties": {
@@ -1196,8 +1351,8 @@
   "description": "Toutes les informations utiles au devis, lues sur un plan de tôlerie.",
   "properties": {
     "version_schema": {
-      "const": "1.1",
-      "default": "1.1",
+      "const": "1.2",
+      "default": "1.2",
       "title": "Version Schema",
       "type": "string"
     },
@@ -1252,8 +1407,24 @@
       "$ref": "#/$defs/Champ_str_",
       "description": "Tolérance générale, ex. « ISO 2768-m »."
     },
+    "tolerances_geometriques": {
+      "description": "Tous les cadres de tolérance géométrique du plan, y compris ceux des trous.",
+      "items": {
+        "$ref": "#/$defs/ToleranceGeometrique"
+      },
+      "title": "Tolerances Geometriques",
+      "type": "array"
+    },
+    "etats_surface": {
+      "description": "Indications de rugosité (états de surface).",
+      "items": {
+        "$ref": "#/$defs/EtatSurface"
+      },
+      "title": "Etats Surface",
+      "type": "array"
+    },
     "notes": {
-      "description": "Notes du plan.",
+      "description": "Notes écrites du plan (bloc de notes, remarques). Sans le cartouche, l'échelle, le traitement, les états de surface ni les tolérances géométriques.",
       "items": {
         "$ref": "#/$defs/Note"
       },

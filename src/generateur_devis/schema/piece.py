@@ -21,7 +21,7 @@ from typing import Annotated, Generic, Literal, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field
 
-VERSION_SCHEMA = "1.1"
+VERSION_SCHEMA = "1.2"
 
 T = TypeVar("T")
 
@@ -287,6 +287,41 @@ class Cote(_Trace):
     texte: str | None = Field(None, description="Texte brut de la cote, ex. « 2X Ø8,75 +0,1/0 ».")
 
 
+class ToleranceGeometrique(_Trace):
+    """Un cadre de tolérance géométrique, ex. « ⌖ 0,1 A B »."""
+
+    type: Literal[
+        "planeite",
+        "rectitude",
+        "circularite",
+        "cylindricite",
+        "profil_ligne",
+        "profil_surface",
+        "parallelisme",
+        "perpendicularite",
+        "inclinaison",
+        "position",
+        "concentricite",
+        "symetrie",
+        "battement",
+        "battement_total",
+        "autre",
+    ] = Field(description="Caractéristique tolérancée, d'après le symbole du cadre.")
+    valeur: float = Field(description="Valeur de la tolérance (zone de tolérance).")
+    references: str | None = Field(
+        None, description="Références (datums) citées dans le cadre, ex. « A B »."
+    )
+    quantite: int = Field(1, ge=1, description="Nombre de cadres identiques.")
+    texte: str | None = Field(None, description="Contenu brut du cadre.")
+
+
+class EtatSurface(_Trace):
+    """Une indication de rugosité, ex. « Ra 1,6 µm » ou « 63 RMS »."""
+
+    valeur: float | None = Field(None, description="Valeur numérique de la rugosité.")
+    texte: str = Field(description="Indication telle qu'écrite, ex. « Ra 1.6 µm ».")
+
+
 class Anomalie(_Base):
     """Problème signalé par l'IA plutôt que de deviner une valeur."""
 
@@ -301,7 +336,7 @@ class Anomalie(_Base):
 class PieceExtraite(_Base):
     """Toutes les informations utiles au devis, lues sur un plan de tôlerie."""
 
-    version_schema: Literal["1.1"] = VERSION_SCHEMA
+    version_schema: Literal["1.2"] = VERSION_SCHEMA
     unites: Champ[Unite] = Field(
         default_factory=Champ[Unite], description="Unité des cotes du plan (mm ou in)."
     )
@@ -322,7 +357,20 @@ class PieceExtraite(_Base):
     tolerance_generale: Champ[str] = Field(
         default_factory=Champ[str], description="Tolérance générale, ex. « ISO 2768-m »."
     )
-    notes: list[Note] = Field(default_factory=list, description="Notes du plan.")
+    tolerances_geometriques: list[ToleranceGeometrique] = Field(
+        default_factory=list,
+        description="Tous les cadres de tolérance géométrique du plan, y compris ceux des trous.",
+    )
+    etats_surface: list[EtatSurface] = Field(
+        default_factory=list, description="Indications de rugosité (états de surface)."
+    )
+    notes: list[Note] = Field(
+        default_factory=list,
+        description=(
+            "Notes écrites du plan (bloc de notes, remarques). Sans le cartouche, l'échelle, "
+            "le traitement, les états de surface ni les tolérances géométriques."
+        ),
+    )
     cotes: list[Cote] = Field(
         default_factory=list, description="Toutes les cotes lues sur le plan."
     )

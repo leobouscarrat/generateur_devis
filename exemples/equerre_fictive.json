@@ -1,5 +1,5 @@
 {
-  "version_schema": "1.1",
+  "version_schema": "1.2",
   "unites": {"valeur": "mm"},
   "identification": {
     "reference": {"valeur": "EQ-0042"},

@@ -10,6 +10,7 @@ from generateur_devis.schema.piece import (
     Contours,
     Cote,
     Encombrement,
+    EtatSurface,
     Identification,
     Matiere,
     Note,
@@ -18,6 +19,7 @@ from generateur_devis.schema.piece import (
     ProfilPliage,
     Soudure,
     Source,
+    ToleranceGeometrique,
     Traitement,
     Trou,
 )
@@ -32,6 +34,7 @@ __all__ = [
     "Contours",
     "Cote",
     "Encombrement",
+    "EtatSurface",
     "Identification",
     "Matiere",
     "Note",
@@ -40,6 +43,7 @@ __all__ = [
     "ProfilPliage",
     "Soudure",
     "Source",
+    "ToleranceGeometrique",
     "Traitement",
     "Trou",
 ]

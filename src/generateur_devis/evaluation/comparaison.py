@@ -152,6 +152,11 @@ def _apparier(attendus: list, lus: list, egal: Callable[[Any, Any], bool]) -> in
     return apparies
 
 
+def _premier_nombre(texte: str) -> float | None:
+    m = re.search(r"\d+(?:[.,]\d+)?", texte)
+    return float(m.group().replace(",", ".")) if m else None
+
+
 def _texte_proche(a: str, b: str) -> bool:
     a, b = normaliser(a), normaliser(b)
     return a == b or SequenceMatcher(None, a, b).ratio() >= SEUIL_SIMILARITE_TEXTE
@@ -183,6 +188,23 @@ LISTES: dict[str, tuple[Callable[[PieceExtraite], list], Callable[[Any, Any], bo
         _egal_lie,
     ),
     "traitement.zones_epargne": (lambda p: list(p.traitement.zones_epargne), _texte_proche),
+    # Valeur seule (ce qui compte pour le prix), puis type + valeur (lecture du symbole).
+    "tolerances_geometriques": (
+        lambda p: [t.valeur for t in p.tolerances_geometriques for _ in range(t.quantite)],
+        egal_nombre,
+    ),
+    "tolerances_geometriques.type": (
+        lambda p: [
+            (t.type, t.valeur) for t in p.tolerances_geometriques for _ in range(t.quantite)
+        ],
+        _egal_lie,
+    ),
+    "etats_surface": (
+        lambda p: [
+            e.valeur if e.valeur is not None else _premier_nombre(e.texte) for e in p.etats_surface
+        ],
+        lambda a, b: a is not None and b is not None and egal_nombre(a, b),
+    ),
 }
 
 

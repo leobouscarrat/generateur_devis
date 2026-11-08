@@ -8,7 +8,7 @@ import json
 
 from generateur_devis.schema.export import json_schema
 
-VERSION_PROMPT = "v1"
+VERSION_PROMPT = "v2"
 
 CONSIGNES = """\
 Tu es technicien méthodes dans un atelier de tôlerie. Tu lis un plan technique de pièce \
@@ -32,6 +32,11 @@ du plan) quand c'est possible, sinon null.
 (« 2x Ø8 » = une entrée avec quantite 2).
 9. La nomenclature peut lister la pièce elle-même (repère 1) : ne la mets pas dans \
 « composants ».
+10. Liste dans « soudures » tous les symboles de soudure, y compris ceux qui sont isolés \
+sur le plan ou rattachés à aucun trait (ex. « FILLET », « SPOT », « PLUG »).
+11. Chaque information va dans son champ, pas dans « notes » : traitement (« FINISH »), \
+tolérance générale, états de surface (Ra, RMS), cadres de tolérance géométrique, échelle \
+et cartouche. « notes » ne contient que les notes écrites du plan.
 """
 
 
