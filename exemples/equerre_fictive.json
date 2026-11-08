@@ -1,5 +1,5 @@
 {
-  "version_schema": "1.0",
+  "version_schema": "1.1",
   "unites": {"valeur": "mm"},
   "identification": {
     "reference": {"valeur": "EQ-0042"},
@@ -44,7 +44,7 @@
   "tolerance_generale": {"valeur": "ISO 2768-m"},
   "notes": [
     {"texte": "RAYON DE PLIAGE INTERIEUR : 2 mm", "categorie": "pliage"},
-    {"texte": "EBAVURER TOUTES LES ARETES", "categorie": "general"}
+    {"texte": "EBAVURER TOUTES LES ARETES", "categorie": "operation"}
   ],
   "cotes": [
     {"valeur": 80.0, "texte": "80"},

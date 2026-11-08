@@ -21,7 +21,7 @@ from typing import Annotated, Generic, Literal, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field
 
-VERSION_SCHEMA = "1.0"
+VERSION_SCHEMA = "1.1"
 
 T = TypeVar("T")
 
@@ -185,6 +185,9 @@ class Trou(_Trace):
         None, description="Tolérance géométrique associée, ex. « position 0,1 A B »."
     )
     filetage: str | None = Field(None, description="Taraudage éventuel, ex. « M6 ».")
+    fraisurage: str | None = Field(
+        None, description="Fraisure ou lamage éventuel, tel qu'écrit, ex. « fraisure 90° Ø12 »."
+    )
 
 
 class CoinCoupe(_Trace):
@@ -208,6 +211,21 @@ class Contours(_Base):
         default_factory=list,
         description="Découpes ou formes particulières non décrites ailleurs, en texte libre.",
     )
+
+
+class Soudure(_Trace):
+    """Un cordon ou un groupe de points de soudure (« 4x »)."""
+
+    procede: Literal["mig_mag", "tig", "points", "autre", "inconnu"] = Field(
+        "inconnu", description="Procédé de soudage, s'il est indiqué."
+    )
+    type_joint: Literal["angle", "bout_a_bout", "bouchon", "autre", "inconnu"] = Field(
+        "inconnu", description="Type de joint d'après le symbole de soudure."
+    )
+    longueur: float | None = Field(None, description="Longueur d'un cordon, si cotée.")
+    gorge: float | None = Field(None, description="Épaisseur de gorge (« a3 » → 3).")
+    quantite: int = Field(1, ge=1, description="Nombre de cordons ou de points identiques.")
+    texte: str | None = Field(None, description="Annotation brute du symbole de soudure.")
 
 
 class Composant(_Trace):
@@ -241,7 +259,21 @@ class Note(_Trace):
     texte: str = Field(
         description="Texte de la note. Pour une note bilingue, recopier une seule langue (la première)."
     )
-    categorie: Literal["pliage", "traitement", "assemblage", "tolerance", "matiere", "general"]
+    categorie: Literal[
+        "pliage",
+        "traitement",
+        "assemblage",
+        "soudure",
+        "operation",
+        "tolerance",
+        "matiere",
+        "general",
+    ] = Field(
+        description=(
+            "Catégorie de la note. « operation » pour une opération de fabrication "
+            "(ébavurage, marquage, contrôle…)."
+        )
+    )
 
 
 class Cote(_Trace):
@@ -269,7 +301,7 @@ class Anomalie(_Base):
 class PieceExtraite(_Base):
     """Toutes les informations utiles au devis, lues sur un plan de tôlerie."""
 
-    version_schema: Literal["1.0"] = VERSION_SCHEMA
+    version_schema: Literal["1.1"] = VERSION_SCHEMA
     unites: Champ[Unite] = Field(
         default_factory=Champ[Unite], description="Unité des cotes du plan (mm ou in)."
     )
@@ -282,6 +314,9 @@ class PieceExtraite(_Base):
     contours: Contours = Field(default_factory=Contours)
     composants: list[Composant] = Field(
         default_factory=list, description="Composants de la nomenclature, hors pièce elle-même."
+    )
+    soudures: list[Soudure] = Field(
+        default_factory=list, description="Soudures indiquées sur le plan (symboles ou notes)."
     )
     traitement: Traitement = Field(default_factory=Traitement)
     tolerance_generale: Champ[str] = Field(

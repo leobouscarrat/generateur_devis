@@ -271,6 +271,21 @@ Coût de réglage   = Σ temps de réglage des postes × taux
 | Taux poste manuel / sertisseuse | 50 €/h |
 | Réglage sertisseuse | 10 min / lot |
 
+### Correspondance avec le format de la pièce
+
+Chaque bloc s'appuie sur des champs lus sur le plan ([format de la pièce](../src/generateur_devis/schema/piece.py)). Le reste (surface du flan, longueur de coupe, masse…) est **calculé par le code**, jamais par l'IA.
+
+| Bloc | Champs lus sur le plan | Calculé par le code | Saisi à part |
+|---|---|---|---|
+| 1. Matière | `matiere` (désignation, famille, épaisseur), `profil_pliage`, `encombrement` | Flan développé, masse | Prix au kg (référentiel) |
+| 2. Découpe | `contours.trous`, `contours.coins`, `contours.autres_decoupes`, `profil_pliage`, `encombrement` | Longueur de coupe, nombre d'amorçages | Vitesse, taux (référentiel) |
+| 3. Pliage | `profil_pliage` (plis, angles, rayons), `encombrement` (longueur des plis, taille de la pièce) | Temps de pliage, catégorie de taille | Temps par pli (référentiel) |
+| 4. Soudure | `soudures` (procédé, type de joint, longueur, gorge, quantité) | Temps de soudure | Taux soudeur (référentiel) |
+| 5. Finition | `traitement` (type, zones à épargner) | Surface à traiter | Prix au m², minimum de lot (référentiel) |
+| 6. Composants & op. secondaires | `composants`, `contours.trous` (filetage, fraisurage), `notes` de catégorie « operation » (ébavurage, marquage, contrôle), tolérances serrées | Nombre d'opérations | Prix des composants, temps standards (référentiel) |
+
+La **quantité** n'apparaît presque jamais sur un plan : elle est saisie avec le contexte commercial (voir [architecture.md, étape 1](architecture.md#étape-1--dépôt-du-plan-et-contexte-commercial)).
+
 ---
 
 ## 4. Du coût au prix de vente

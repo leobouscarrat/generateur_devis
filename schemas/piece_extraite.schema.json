@@ -719,10 +719,13 @@
           "type": "string"
         },
         "categorie": {
+          "description": "Catégorie de la note. « operation » pour une opération de fabrication (ébavurage, marquage, contrôle…).",
           "enum": [
             "pliage",
             "traitement",
             "assemblage",
+            "soudure",
+            "operation",
             "tolerance",
             "matiere",
             "general"
@@ -867,6 +870,113 @@
         "elements"
       ],
       "title": "ProfilPliage",
+      "type": "object"
+    },
+    "Soudure": {
+      "additionalProperties": false,
+      "description": "Un cordon ou un groupe de points de soudure (« 4x »).",
+      "properties": {
+        "confiance": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Confiance dans la lecture, de 0 (aucune) à 1 (certaine).",
+          "title": "Confiance"
+        },
+        "source": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Source"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Endroit du plan où l'élément a été lu."
+        },
+        "procede": {
+          "default": "inconnu",
+          "description": "Procédé de soudage, s'il est indiqué.",
+          "enum": [
+            "mig_mag",
+            "tig",
+            "points",
+            "autre",
+            "inconnu"
+          ],
+          "title": "Procede",
+          "type": "string"
+        },
+        "type_joint": {
+          "default": "inconnu",
+          "description": "Type de joint d'après le symbole de soudure.",
+          "enum": [
+            "angle",
+            "bout_a_bout",
+            "bouchon",
+            "autre",
+            "inconnu"
+          ],
+          "title": "Type Joint",
+          "type": "string"
+        },
+        "longueur": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Longueur d'un cordon, si cotée.",
+          "title": "Longueur"
+        },
+        "gorge": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Épaisseur de gorge (« a3 » → 3).",
+          "title": "Gorge"
+        },
+        "quantite": {
+          "default": 1,
+          "description": "Nombre de cordons ou de points identiques.",
+          "minimum": 1,
+          "title": "Quantite",
+          "type": "integer"
+        },
+        "texte": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Annotation brute du symbole de soudure.",
+          "title": "Texte"
+        }
+      },
+      "title": "Soudure",
       "type": "object"
     },
     "Source": {
@@ -1063,6 +1173,19 @@
           "default": null,
           "description": "Taraudage éventuel, ex. « M6 ».",
           "title": "Filetage"
+        },
+        "fraisurage": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Fraisure ou lamage éventuel, tel qu'écrit, ex. « fraisure 90° Ø12 ».",
+          "title": "Fraisurage"
         }
       },
       "title": "Trou",
@@ -1073,8 +1196,8 @@
   "description": "Toutes les informations utiles au devis, lues sur un plan de tôlerie.",
   "properties": {
     "version_schema": {
-      "const": "1.0",
-      "default": "1.0",
+      "const": "1.1",
+      "default": "1.1",
       "title": "Version Schema",
       "type": "string"
     },
@@ -1112,6 +1235,14 @@
         "$ref": "#/$defs/Composant"
       },
       "title": "Composants",
+      "type": "array"
+    },
+    "soudures": {
+      "description": "Soudures indiquées sur le plan (symboles ou notes).",
+      "items": {
+        "$ref": "#/$defs/Soudure"
+      },
+      "title": "Soudures",
       "type": "array"
     },
     "traitement": {
