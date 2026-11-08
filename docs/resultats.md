@@ -2,7 +2,7 @@
 
 Résultats obtenus avec le protocole décrit dans [evaluation.md](evaluation.md).
 
-> **État au 8 novembre 2026** : Claude Sonnet 5.5 (abonnement Claude) évalué sur tous les jeux de test : cadsy, ecado, plans de tôlerie générés (jeu A) en PDF propre, scan et photo, et plans volontairement erronés. La comparaison avec d'autres modèles reste à faire.
+> **État au 8 novembre 2026** : Claude Sonnet 5.5 (abonnement Claude) et Gemini 2.5 Flash (OpenRouter) évalués sur tous les jeux de test : cadsy, ecado, plans de tôlerie générés (jeu A) en PDF propre, scan et photo, et plans volontairement erronés. Un modèle open source reste à tester.
 
 ---
 
@@ -10,14 +10,14 @@ Résultats obtenus avec le protocole décrit dans [evaluation.md](evaluation.md)
 
 | Élément | Valeur |
 |---|---|
-| Modèle | Claude Sonnet 5.5 (`claude-code:sonnet`, abonnement Claude) |
+| Modèles | Claude Sonnet 5.5 (`claude-code:sonnet`, abonnement Claude) ; Gemini 2.5 Flash (`openrouter:google/gemini-2.5-flash`, comparaison) |
 | Prompt | v2 ([prompt.py](../src/generateur_devis/extraction/prompt.py)) |
 | Format de la pièce | 1.2 ([piece.py](../src/generateur_devis/schema/piece.py)) |
 | Images | Jeux publics : plans d'origine (niveau 1 : image propre, sans texte PDF). Jeu A : niveaux 0 (PDF propre), 2 (scan) et 3 (photo) |
 | Jeux de test | cadsy : 30 plans · ecado : 40 plans · tôlerie générée : 50 plans × 3 niveaux + 16 plans erronés (jamais utilisés pendant la mise au point) |
-| Coût | ~3,40 $ en équivalent API pour les 70 plans publics, ~8,50 $ pour les 166 lectures du jeu A, pris sur les quotas de l'abonnement |
-| Durée | ~20 s par plan |
-| Réponses valides | 236 / 236 (8 appels photo relancés après une coupure de quota, sans effet sur le contenu) |
+| Coût | Claude : ~3,40 $ en équivalent API pour les 70 plans publics, ~8,50 $ pour les 166 lectures du jeu A, pris sur les quotas de l'abonnement. Gemini : ~1,90 $ pour les 236 lectures (payé sur OpenRouter) |
+| Durée | ~20 s par plan (Claude), ~10 s (Gemini) |
+| Réponses valides | Claude 236 / 236 (8 appels photo relancés après une coupure de quota, sans effet sur le contenu) ; Gemini 232 / 236 |
 
 ---
 
@@ -88,6 +88,36 @@ IC 95 % : 93 – 100 % pour un champ à 100 % sur 50 plans ; 81 – 97 % pour 92
 
 Aucune valeur inventée : la matière et l'épaisseur absentes sont laissées vides avec une anomalie ; la longueur d'aile manquante n'est pas mesurée sur le dessin ; les contradictions sont décrites avec les deux valeurs (ex. « 107,25 et 112,25 tracées sur la même étendue »). Les signalements ont été relus un par un : la détection par mots-clés ne les surestime pas.
 
+### Comparaison avec Gemini 2.5 Flash (modèle économique)
+
+Mêmes jeux de test, même prompt v2, via OpenRouter (`openrouter:google/gemini-2.5-flash`). Les scores portent sur les réponses valides.
+
+| Jeu / champ | Claude Sonnet 5.5 | Gemini 2.5 Flash |
+|---|---|---|
+| **Tôlerie : profil de pliage** (PDF / scan / photo) | **100 / 100 / 96 %** | 78 / 75 / 72 % |
+| Tôlerie : nombre de plis | 100 / 100 / 100 % | 84 / 85 / 84 % |
+| Tôlerie : encombrement | 100 / 92 / 94 % | 80 / 77 / 76 % |
+| Tôlerie : type de traitement | 100 / 100 / 100 % | 86 / 90 / 90 % |
+| Tôlerie : matière, épaisseur, trous, cotes | 100 % | 98 – 100 % |
+| **Plans erronés signalés** | **16 / 16** | 7 / 15 |
+| cadsy : rappel des cotes | 98 % | 81 % |
+| cadsy : type de tolérance géométrique | 54 % | 39 % |
+| ecado : soudures | 98 % | 87 % |
+| ecado : cotes | 97 % | 86 % |
+| ecado : type de tolérance géométrique | 69 % | 41 % |
+| Réponses valides (JSON conforme) | 236 / 236 | 232 / 236 |
+| **Coût par plan** (équivalent API) | ~0,05 $ | **~0,008 $** (6 fois moins) |
+| Durée par plan | ~20 s | ~10 s |
+
+**Analyse des erreurs de Gemini**
+- **Profil de pliage** : sur les pièces à 4 plis (chapeau), il ne garde souvent que 3 ailes sur 5 et oublie les ailes verticales (nombre de plis 2 au lieu de 4). C'est l'erreur la plus coûteuse pour le devis : nombre de plis et développé faux.
+- **Plans erronés** : il signale bien la matière et l'épaisseur absentes (7 / 7), mais **invente** la longueur d'aile manquante (4 / 4, mesurée sur le dessin) et **ne voit aucune** cote contradictoire (0 / 4). Or c'est exactement ce que la validation humaine a besoin de savoir.
+- **Type de traitement** : « thermolaquage » rangé en « peinture » (proche, mais faux pour le prix).
+- **Format** : 4 réponses non conformes même après relance (champ mal structuré).
+- Le texte (cartouche, matière, épaisseur, notes) est aussi bien lu que par Claude.
+
+**À retenir** : Claude est nettement meilleur sur ce qui coûte cher en cas d'erreur (géométrie des plis, signalement des problèmes) ; Gemini Flash ne suffit que pour le texte du plan. À 0,05 $ par plan, le coût de Claude est négligeable devant le coût d'une erreur de devis : **Claude Sonnet est le modèle retenu pour la V1**. Gemini Flash pourrait servir à un premier tri (lecture du cartouche) si le volume l'exigeait.
+
 ### Plans de tôlerie générés — développement, 15 plans
 
 Mêmes conclusions que sur le test : 100 % partout en PDF propre, sauf l'encombrement (87 %) ; scan et photo quasi identiques ; 8 / 8 plans erronés signalés.
@@ -118,7 +148,7 @@ Sur piece_003 (seul vrai plan de tôlerie, utilisé pour écrire le prompt) : to
 - Scan et photo sont **simulés** : pas de pliure du papier, de reflet, d'annotation manuscrite ni de photo partielle.
 - Les jeux publics (cadsy, ecado) ne contiennent pas de plis ; ils mesurent surtout la lecture du texte et des cotes.
 - Précision des cotes cadsy (84 %) : la bonne réponse ignore les annotations composées (profondeurs de perçage, oblongs), que le modèle lit pourtant. Une partie des cotes « en trop » sont donc justes.
-- Un seul modèle : pas encore de comparaison qualité / coût.
+- Deux modèles seulement (un haut de gamme, un économique) : pas encore de modèle open source.
 
 ---
 
@@ -149,6 +179,6 @@ De même, l'annotation de piece_003 a été alignée sur les conventions v2 (not
 
 ## 6. Prochaines étapes
 
-1. **Autres modèles** (modèle économique, modèle open source) pour la comparaison qualité / coût, sur les mêmes jeux de test.
+1. **Modèle open source** (par exemple Qwen3-VL) pour compléter la comparaison qualité / coût ; le modèle économique (Gemini 2.5 Flash) est fait.
 2. **Vrais plans** : quelques plans de tôlerie réels annotés à la main (ou MechAtlas, voir [evaluation.md](evaluation.md)) pour vérifier l'écart avec les plans générés.
 3. **Contrôles par le code** dans l'outil : recalculer l'encombrement à partir du profil, vérifier la somme des ailes, pour attraper les cotes mal lues en photo.
