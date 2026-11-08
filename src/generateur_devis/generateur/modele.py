@@ -156,6 +156,9 @@ class SpecPiece:
     quantite_composant: int = 0
     norme_sertissage: str | None = None
     notes: list[Note] = field(default_factory=list)
+    erreur: str | None = None
+    """Erreur volontaire (plans du niveau E), voir ERREURS."""
+    erreur_detail: dict = field(default_factory=dict)
 
     def t(self, fr: str, en: str) -> str:
         return fr if self.langue == "fr" else en
@@ -396,4 +399,35 @@ def tirer_piece(rng: random.Random, identifiant: str) -> tuple[SpecPiece, Geomet
     for fr, en in rng.sample(NOTES_GENERALES, rng.randint(0, 1)):
         spec.notes.append(Note(spec.t(fr, en), "general"))
     rng.shuffle(spec.notes)
+    return spec, geo
+
+
+# --- Plans volontairement erronés (niveau E) -------------------------------------------------
+
+ERREURS = {
+    "matiere_absente": "Matière non indiquée (cartouche « — »)",
+    "epaisseur_absente": "Épaisseur non indiquée (cartouche « — »)",
+    "cote_aile_absente": "Longueur d'une aile non cotée, sans cote d'encombrement pour la retrouver",
+    "cotes_contradictoires": "Cote d'encombrement différente de la somme des ailes",
+}
+
+
+def tirer_piece_erronee(
+    rng: random.Random, identifiant: str, type_erreur: str
+) -> tuple[SpecPiece, Geometrie]:
+    """Tire une pièce puis y introduit une erreur de type `type_erreur`."""
+    while True:
+        spec, geo = tirer_piece(rng, identifiant)
+        # Les erreurs de cotes demandent au moins deux ailes (une pièce pliée).
+        if type_erreur in ("matiere_absente", "epaisseur_absente") or len(spec.ailes) >= 2:
+            break
+    spec.erreur = type_erreur
+    if type_erreur == "matiere_absente":
+        spec.matiere = None
+    elif type_erreur == "cote_aile_absente":
+        spec.erreur_detail = {"aile": rng.randrange(len(spec.ailes))}
+    elif type_erreur == "cotes_contradictoires":
+        spec.erreur_detail = {"ecart": rng.choice([-1, 1]) * rng.choice([5, 8, 10, 12, 15, 20])}
+    elif type_erreur != "epaisseur_absente":
+        raise ValueError(f"Erreur inconnue : {type_erreur}")
     return spec, geo

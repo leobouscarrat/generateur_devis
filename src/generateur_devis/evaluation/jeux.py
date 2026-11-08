@@ -16,7 +16,9 @@ from pathlib import Path
 import httpx
 import pyarrow.parquet as pq
 
+from generateur_devis.evaluation.degradations import degrader
 from generateur_devis.extraction.documents import Plan, charger_plan
+from generateur_devis.generateur.modele import ERREURS
 from generateur_devis.llm.base import Image
 from generateur_devis.schema import (
     Champ,
@@ -43,6 +45,8 @@ class Echantillon:
     identifiant: str
     plan: Plan
     verite: PieceExtraite
+    erreur: dict | None = None
+    """Erreur introduite volontairement (plans du niveau E)."""
 
 
 @dataclass
@@ -365,21 +369,53 @@ CHAMPS_TOLERIE = [
     "cotes",
 ]
 NOMBRES_TOLERIE = {"dev": 15, "test": 50}
+NOMBRES_ERREURS = {"dev": 8, "test": 16}
+CHAMPS_ERREURS = ["erreur"] + [f"erreur.{t}" for t in ERREURS]
 
 
-def charger_tolerie(partie: str) -> Jeu:
+def _plan_degrade(chemin_pdf: Path, niveau: int) -> Plan:
+    """Plan au niveau de dégradation demandé ; l'image est gardée sur disque pour la consulter."""
+    plan = charger_plan(chemin_pdf)
+    if niveau in (0, 1):
+        return degrader(plan, niveau, chemin_pdf.stem)
+    image = chemin_pdf.parent / f"niveau{niveau}" / f"{chemin_pdf.stem}.jpg"
+    if not image.exists():
+        image.parent.mkdir(exist_ok=True)
+        image.write_bytes(degrader(plan, niveau, chemin_pdf.stem).images[0].donnees)
+    return Plan(chemin_pdf, [Image(image.read_bytes(), "image/jpeg")], "")
+
+
+def _suffixe(niveau: int) -> str:
+    return "" if niveau == 0 else f"-n{niveau}"
+
+
+def charger_tolerie(partie: str, niveau: int = 0) -> Jeu:
     from generateur_devis.generateur import generer_jeu
 
     dossier = generer_jeu(partie, NOMBRES_TOLERIE[partie])
     echantillons = []
     for verite_json in sorted(dossier.glob(f"{partie}-*.json"))[: NOMBRES_TOLERIE[partie]]:
         verite = PieceExtraite.model_validate_json(verite_json.read_text(encoding="utf-8"))
-        plan = charger_plan(verite_json.with_suffix(".pdf"))
+        plan = _plan_degrade(verite_json.with_suffix(".pdf"), niveau)
         echantillons.append(Echantillon("tolerie", verite_json.stem, plan, verite))
-    return Jeu("tolerie", CHAMPS_TOLERIE, echantillons)
+    return Jeu(f"tolerie{_suffixe(niveau)}", CHAMPS_TOLERIE, echantillons)
 
 
-def charger_jeu(nom: str, partie: str = "dev") -> Jeu:
+def charger_tolerie_erreurs(partie: str, niveau: int = 0) -> Jeu:
+    """Plans volontairement erronés : on mesure si l'IA signale l'erreur ou invente."""
+    from generateur_devis.generateur import generer_jeu_erreurs
+
+    dossier = generer_jeu_erreurs(partie, NOMBRES_ERREURS[partie])
+    echantillons = []
+    for verite_json in sorted(dossier.glob(f"{partie}-e???.json"))[: NOMBRES_ERREURS[partie]]:
+        verite = PieceExtraite.model_validate_json(verite_json.read_text(encoding="utf-8"))
+        erreur = json.loads(verite_json.with_suffix(".erreur.json").read_text(encoding="utf-8"))
+        plan = _plan_degrade(verite_json.with_suffix(".pdf"), niveau)
+        echantillons.append(Echantillon("tolerie_erreurs", verite_json.stem, plan, verite, erreur))
+    return Jeu(f"tolerie_erreurs{_suffixe(niveau)}", CHAMPS_ERREURS, echantillons)
+
+
+def charger_jeu(nom: str, partie: str = "dev", niveau: int = 0) -> Jeu:
     if nom == "cadsy":
         return charger_cadsy(partie)
     if nom == "ecado":
@@ -387,5 +423,7 @@ def charger_jeu(nom: str, partie: str = "dev") -> Jeu:
     if nom == "prive":
         return charger_prive()
     if nom == "tolerie":
-        return charger_tolerie(partie)
-    raise ValueError(f"Jeu inconnu : {nom} (cadsy, ecado, prive, tolerie)")
+        return charger_tolerie(partie, niveau)
+    if nom == "tolerie_erreurs":
+        return charger_tolerie_erreurs(partie, niveau)
+    raise ValueError(f"Jeu inconnu : {nom} (cadsy, ecado, prive, tolerie, tolerie_erreurs)")

@@ -168,13 +168,35 @@ Pour limiter le nombre d'appels, on garde **trois niveaux** sur le jeu A, plus l
 | Niveau | Description | Paramètres | Ce qu'on teste |
 |---|---|---|---|
 | 0 | PDF vectoriel propre | Texte du PDF + image | Situation idéale |
-| 2 | Scan | 100 – 150 dpi, bruit, rotation ±2°, léger flou, niveaux de gris | Robustesse au scan |
-| 3 | Photo | Perspective, ombre, flou de mise au point, fond visible | Parcours tablette / téléphone |
-| E | Plan volontairement erroné | Matière absente, cote manquante, cotes contradictoires | Signalement ou invention d'une valeur |
+| 2 | Scan | 100 – 150 dpi, niveaux de gris, rotation ±2°, léger flou, bruit, poussières, JPEG | Robustesse au scan |
+| 3 | Photo | Perspective (coins déplacés de ±7 %), fond visible, éclairage inégal, teinte du papier, flou, JPEG ~2000 px | Parcours tablette / téléphone |
+| E | Plan volontairement erroné | 4 types, voir ci-dessous | Signalement ou invention d'une valeur |
 
-Le niveau 1 (image d'un PDF propre, sans texte lisible) est l'état d'origine des jeux B, C et D : il est donc couvert sans appel supplémentaire.
+Le niveau 1 (image d'un PDF propre, sans texte lisible) est l'état d'origine des jeux B, C et D : il est donc couvert sans appel supplémentaire. Il reste disponible sur le jeu A (`--niveau 1`) pour séparer l'effet du texte PDF de celui de la qualité d'image.
 
-Pour un champ absent (niveau E), la bonne réponse attendue est `null`. Pour une incohérence, c'est un signalement.
+Les dégradations sont reproductibles (tirage selon l'identifiant du plan) et gardées sur disque (`data/generated/tolerie/<partie>/niveau<N>/`) pour pouvoir les consulter. Code : [degradations.py](../src/generateur_devis/evaluation/degradations.py).
+
+### Plans erronés (niveau E)
+
+Générés par le même générateur (`--erreurs`), les 4 types à tour de rôle (développement 8 plans, test 16) :
+
+| Erreur | Ce qui est dessiné | Réaction attendue |
+|---|---|---|
+| Matière absente | « — » dans le cartouche | `null` + anomalie |
+| Épaisseur absente | « — » dans le cartouche | `null` + anomalie |
+| Cote d'aile manquante | Une aile non cotée, sans cote d'encombrement pour la retrouver | Anomalie (la longueur ne peut pas être lue) |
+| Cotes contradictoires | Cote d'encombrement décalée de 5 à 20 mm par rapport à la somme des ailes | Anomalie de type « incohérence » |
+
+Chaque plan reçoit un statut :
+
+| Statut | Sens | Acceptable |
+|---|---|---|
+| Signalé | Anomalie sur le champ concerné (ou confiance < 0,5) | Oui |
+| Abstention | Champ laissé vide, sans anomalie | Oui (rien d'inventé, mais rien d'expliqué) |
+| Inventé | Valeur donnée sans signalement (ex. longueur mesurée sur le dessin) | Non |
+| Non signalé | Incohérence passée sous silence | Non |
+
+Seule la réaction à l'erreur est notée sur ces plans : les autres champs sont déjà mesurés sur les plans sans erreur.
 
 ---
 
@@ -288,7 +310,7 @@ Les réponses brutes sont stockées localement (`results/`, hors du dépôt). Se
 
 | Jeu | Plans | Versions | Appels par modèle |
 |---|---|---|---|
-| A — test | 50 | niveaux 0, 2, 3 (×3) + 15 erronés | 165 |
+| A — test | 50 | niveaux 0, 2, 3 (×3) + 16 erronés | 166 |
 | B — cadsy test | 30 | — | 30 |
 | C — ecado test | 40 | — | 40 |
 | **Total test** | | | **~235** |

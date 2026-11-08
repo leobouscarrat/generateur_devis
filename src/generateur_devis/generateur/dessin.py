@@ -261,7 +261,10 @@ def _vue_cote(f: Feuille, geo: Geometrie, ox: float, oy: float, e: float) -> Non
     # Une cote par aile, cotée à l'extérieur (comme sur un vrai plan de tôlerie).
     cotes_ailes = longueurs_exterieures(spec)
     dernier = len(spec.ailes) - 1
+    aile_absente = spec.erreur_detail.get("aile") if spec.erreur == "cote_aile_absente" else None
     for i, longueur in enumerate(cotes_ailes):
+        if i == aile_absente:
+            continue
         (x1, z1), (x2, z2) = geo.points[i], geo.points[i + 1]
         ux, uz = (x2 - x1) / spec.ailes[i], (z2 - z1) / spec.ailes[i]
         # Prolonge la cote d'une demi-épaisseur du côté de chaque pli (face extérieure).
@@ -273,6 +276,14 @@ def _vue_cote(f: Feuille, geo: Geometrie, ox: float, oy: float, e: float) -> Non
         nx, nz = -uz, ux  # normale à gauche du sens de parcours
         exterieur = (mx + nx - cx) ** 2 + (mz + nz - cz) ** 2 > (mx - cx) ** 2 + (mz - cz) ** 2
         f.cote(P(x1, z1), P(x2, z2), 7 if exterieur else -7, longueur)
+    if spec.erreur == "cote_aile_absente":
+        return  # pas d'encombrement : la longueur manquante ne peut pas être retrouvée
+    if spec.erreur == "cotes_contradictoires":
+        # Encombrement faux, toujours affiché : contredit la somme des ailes.
+        f.cote(P(0, 0), P(geo.longueur, 0), -16, geo.longueur + spec.erreur_detail["ecart"])
+        if not any(abs(geo.hauteur - c) < 1e-6 for c in cotes_ailes):
+            f.cote(P(0, 0), P(0, geo.hauteur), 16, geo.hauteur)
+        return
     # Encombrement, seulement s'il n'est pas déjà donné par une cote d'aile.
     if not any(abs(geo.longueur - c) < 1e-6 for c in cotes_ailes):
         f.cote(P(0, 0), P(geo.longueur, 0), -16, geo.longueur)
@@ -291,7 +302,10 @@ def _cartouche(f: Feuille, echelle: float) -> None:
         (t("Référence", "Part number"), spec.reference),
         (t("Indice", "Revision"), spec.indice),
         (t("Matière", "Material"), spec.matiere or "—"),
-        (t("Épaisseur", "Thickness"), f"{f.nombre(spec.epaisseur)} mm"),
+        (
+            t("Épaisseur", "Thickness"),
+            "—" if spec.erreur == "epaisseur_absente" else f"{f.nombre(spec.epaisseur)} mm",
+        ),
     ]
     if spec.traitement and spec.traitement_dans_cartouche:
         lignes.append((t("Traitement", "Finish"), spec.traitement[0]))

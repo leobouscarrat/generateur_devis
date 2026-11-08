@@ -5,18 +5,29 @@ import random
 from pathlib import Path
 
 from generateur_devis.generateur.dessin import dessiner
-from generateur_devis.generateur.modele import tirer_piece
+from generateur_devis.generateur.modele import ERREURS, tirer_piece, tirer_piece_erronee
 from generateur_devis.generateur.verite import verite
 
 RACINE = Path(__file__).resolve().parents[3]
 DOSSIER_GENERE = RACINE / "data" / "generated" / "tolerie"
+DOSSIER_ERREURS = RACINE / "data" / "generated" / "tolerie_erreurs"
 GRAINES = {"dev": 1001, "test": 2002}
+GRAINES_ERREURS = {"dev": 3003, "test": 4004}
 
 
-def generer_piece(graine: int, identifiant: str, dossier: Path) -> Path:
-    """Génère `identifiant.pdf` (plan) et `identifiant.json` (bonne réponse)."""
+def generer_piece(graine: int, identifiant: str, dossier: Path, erreur: str | None = None) -> Path:
+    """Génère `identifiant.pdf` (plan) et `identifiant.json` (bonne réponse).
+
+    Avec `erreur`, le plan est volontairement erroné et `identifiant.erreur.json` décrit l'erreur.
+    """
     rng = random.Random(f"{graine}-{identifiant}")
-    spec, geo = tirer_piece(rng, identifiant)
+    if erreur is None:
+        spec, geo = tirer_piece(rng, identifiant)
+    else:
+        spec, geo = tirer_piece_erronee(rng, identifiant, erreur)
+        (dossier / f"{identifiant}.erreur.json").write_text(
+            json.dumps({"type": erreur, **spec.erreur_detail}), encoding="utf-8"
+        )
     chemin_pdf = dossier / f"{identifiant}.pdf"
     cotes = dessiner(spec, geo, chemin_pdf)
     bonne_reponse = verite(spec, geo, cotes)
@@ -38,4 +49,16 @@ def generer_jeu(partie: str, nombre: int, dossier: Path | None = None) -> Path:
         json.dumps({"partie": partie, "graine": GRAINES[partie], "nombre": nombre}),
         encoding="utf-8",
     )
+    return dossier
+
+
+def generer_jeu_erreurs(partie: str, nombre: int, dossier: Path | None = None) -> Path:
+    """Plans volontairement erronés (niveau E) : les types d'erreur sont répartis à tour de rôle."""
+    dossier = dossier or DOSSIER_ERREURS / partie
+    dossier.mkdir(parents=True, exist_ok=True)
+    types = list(ERREURS)
+    for i in range(nombre):
+        identifiant = f"{partie}-e{i:03d}"
+        if not (dossier / f"{identifiant}.json").exists():
+            generer_piece(GRAINES_ERREURS[partie], identifiant, dossier, types[i % len(types)])
     return dossier

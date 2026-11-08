@@ -249,3 +249,63 @@ def comparer(
         else:
             raise ValueError(f"Champ inconnu : {champ}")
     return resultats
+
+
+# --- Plans volontairement erronés (niveau E) -------------------------------------------------
+
+STATUTS_ERREUR = {
+    "signale": "l'IA signale le problème (anomalie)",
+    "abstention": "valeur laissée vide, sans anomalie",
+    "invente": "valeur donnée sans signalement",
+    "non_signale": "incohérence non signalée",
+}
+
+_INDICES_ERREUR: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
+    # (préfixes du champ de l'anomalie, mots de sa description)
+    "matiere_absente": (("matiere.designation", "matiere.famille"), ("MATIERE", "MATERIAL")),
+    "epaisseur_absente": (("matiere.epaisseur",), ("EPAISSEUR", "THICKNESS")),
+    "cote_aile_absente": (
+        ("profil_pliage", "encombrement", "cotes"),
+        ("AILE", "FLANGE", "LONGUEUR", "NONCOTE", "MANQUANTE", "MISSING"),
+    ),
+}
+
+
+def _anomalie_sur(piece: PieceExtraite, prefixes: tuple[str, ...], mots: tuple[str, ...]) -> bool:
+    for a in piece.anomalies:
+        if a.champ and a.champ.startswith(prefixes):
+            return True
+        if any(m in normaliser(a.description) for m in mots):
+            return True
+    return False
+
+
+def evaluer_erreur(erreur: dict, extraction: PieceExtraite) -> list[ResultatChamp]:
+    """Réaction de l'IA à l'erreur introduite : signalée, abstention, inventée ou non signalée.
+
+    Renvoie deux lignes : « erreur » (tous types confondus) et « erreur.<type> ».
+    """
+    type_erreur = erreur["type"]
+    if type_erreur == "cotes_contradictoires":
+        incoherence = any(a.type == "incoherence" for a in extraction.anomalies)
+        statut = "signale" if incoherence else "non_signale"
+        lu = None
+    else:
+        prefixes, mots = _INDICES_ERREUR[type_erreur]
+        if type_erreur == "cote_aile_absente":
+            lu = _profil(extraction)[0]
+            confiance = extraction.profil_pliage.confiance if extraction.profil_pliage else None
+        else:
+            lu, confiance = _valeur(extraction, prefixes[0])
+        if _anomalie_sur(extraction, prefixes, mots) or (
+            lu is not None and confiance is not None and confiance < SEUIL_CONFIANCE_SIGNALEE
+        ):
+            statut = "signale"
+        elif lu is None:
+            statut = "abstention"
+        else:
+            statut = "invente"
+    return [
+        ResultatChamp("erreur", statut, type_erreur, lu),
+        ResultatChamp(f"erreur.{type_erreur}", statut, type_erreur, lu),
+    ]

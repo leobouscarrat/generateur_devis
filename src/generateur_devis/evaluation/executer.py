@@ -8,14 +8,14 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-from generateur_devis.evaluation.comparaison import ResultatChamp, comparer
+from generateur_devis.evaluation.comparaison import ResultatChamp, comparer, evaluer_erreur
 from generateur_devis.evaluation.jeux import Echantillon, Jeu
 from generateur_devis.extraction import VERSION_PROMPT, extraire
 from generateur_devis.extraction.extracteur import ResultatExtraction
 from generateur_devis.llm.base import ModeleVision
 
 DOSSIER_RUNS = Path(__file__).resolve().parents[3] / "results" / "runs"
-STATUTS_ACCEPTABLES = {"juste", "absent_ok", "deduit_signale"}
+STATUTS_ACCEPTABLES = {"juste", "absent_ok", "deduit_signale", "signale", "abstention"}
 
 
 @dataclass
@@ -31,7 +31,11 @@ def evaluer_echantillon(
     extraction = extraire(echantillon.plan, modele)
     resultat = ResultatEchantillon(echantillon.identifiant, extraction)
     if extraction.piece is not None:
-        resultat.champs = comparer(echantillon.verite, extraction.piece, champs)
+        ordinaires = [c for c in champs if not c.startswith("erreur")]
+        if ordinaires:
+            resultat.champs = comparer(echantillon.verite, extraction.piece, ordinaires)
+        if echantillon.erreur is not None:
+            resultat.champs += evaluer_erreur(echantillon.erreur, extraction.piece)
     return resultat
 
 

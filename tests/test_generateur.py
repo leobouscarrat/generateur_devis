@@ -51,3 +51,19 @@ def test_plan_et_bonne_reponse(tmp_path):
         resultats = comparer(verite, verite)
         assert all(r.statut in ("juste", "absent_ok", "liste") for r in resultats)
         assert all(r.apparies == r.attendus for r in resultats if r.statut == "liste")
+
+
+def test_plans_errones(tmp_path):
+    from generateur_devis.generateur.modele import ERREURS
+
+    for i, type_erreur in enumerate(ERREURS):
+        pdf = generer_piece(7, f"e{i}", tmp_path, type_erreur)
+        verite = PieceExtraite.model_validate_json(pdf.with_suffix(".json").read_text())
+        texte = pymupdf.open(pdf)[0].get_text()
+        if type_erreur == "epaisseur_absente":
+            assert verite.matiere.epaisseur.valeur is None
+        if type_erreur == "matiere_absente":
+            assert verite.matiere.designation.valeur is None
+        if type_erreur in ("cote_aile_absente", "cotes_contradictoires"):
+            assert len(verite.profil_pliage.elements) >= 3  # au moins un pli
+        assert texte

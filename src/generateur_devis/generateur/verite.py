@@ -59,7 +59,7 @@ def verite(spec: SpecPiece, geo: Geometrie, cotes: list[Cote]) -> PieceExtraite:
         matiere=Matiere(
             designation=Champ(valeur=spec.matiere),
             famille=Champ(valeur=spec.famille if spec.matiere else None),
-            epaisseur=Champ(valeur=spec.epaisseur),
+            epaisseur=Champ(valeur=None if spec.erreur == "epaisseur_absente" else spec.epaisseur),
         ),
         encombrement=Encombrement(
             longueur=Champ(valeur=geo.longueur),
