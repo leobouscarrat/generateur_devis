@@ -70,6 +70,14 @@ uv run python -m generateur_devis.extraction PLAN.pdf --modele openrouter:<modè
 
 Les réponses sont mises en cache dans `results/cache/` : un même plan n'est jamais redemandé au même modèle.
 
+Évaluer un modèle sur un jeu (cadsy, ecado ou prive), partie développement ou test :
+
+```bash
+uv run python -m generateur_devis.evaluation --jeu ecado --partie dev --modele claude-code:sonnet
+```
+
+Les jeux publics sont téléchargés automatiquement dans `data/raw/`. Les résultats détaillés sont écrits dans `results/runs/`.
+
 ## Structure du dépôt
 
 ```
@@ -84,7 +92,8 @@ Les réponses sont mises en cache dans `results/cache/` : un même plan n'est ja
 ├── src/generateur_devis/
 │   ├── schema/                  # Format JSON de la pièce (Pydantic), partagé par tout le projet
 │   ├── llm/                     # Accès aux modèles : Claude Code, OpenRouter, Nous Research
-│   └── extraction/              # Plan → images + texte, prompt, validation, cache
+│   ├── extraction/              # Plan → images + texte, prompt, validation, cache
+│   └── evaluation/              # Jeux (cadsy, ecado, privé), comparaison champ par champ, synthèse
 ├── schemas/
 │   └── piece_extraite.schema.json  # Export JSON Schema du format (généré)
 ├── exemples/
@@ -105,8 +114,8 @@ Le projet est découpé en deux parties.
 - [ ] Générateur de pièces de tôlerie et mise en plan
 - [x] Accès aux modèles et extraction de bout en bout (premier essai sur piece_003)
 - [ ] Dégradations (image, scan, photo, plans erronés)
+- [x] Chargement de cadsy et ecado, comparaison champ par champ, premiers résultats (développement)
 - [ ] Jeu de vrais plans annotés
-- [ ] Chargement de CADExpert
 - [ ] Exécution sur les modèles et rapport de résultats
 
 **Partie 2 — Outil de devis**
