@@ -136,14 +136,17 @@ def charger_cadsy(partie: str, n_dev: int = 5, n_test: int = 30) -> Jeu:
         )
         cadres = []
         for a in annotations:
-            if a["type"] == "feature_control_frame":
-                type_anglais, valeur, *references = a["text"].split("|")
+            if a["type"] != "feature_control_frame":
+                continue
+            # Des cadres empilés partagent une même annotation, une ligne par cadre.
+            for cadre in a["text"].splitlines():
+                type_anglais, valeur, *references = cadre.split("|")
                 cadres.append(
                     _tolerance_geometrique(
                         type_anglais,
                         _nombre(re.search(r"\d+(?:[.,]\d+)?", valeur).group()),
                         " ".join(references) or None,
-                        a["text"],
+                        cadre,
                     )
                 )
         verite = PieceExtraite(
@@ -278,7 +281,12 @@ def _verite_ecado(gt: dict) -> PieceExtraite:
             EtatSurface(valeur=float(re.search(r"\d+(?:\.\d+)?", e).group()), texte=e)
             for e in gt["surface_finish"]
         ],
-        notes=[Note(texte=n, categorie="general") for n in gt["notes"]],
+        # La tolérance générale a son propre champ : elle n'est pas comptée dans les notes.
+        notes=[
+            Note(texte=n, categorie="general")
+            for n in gt["notes"]
+            if not n.upper().startswith("GENERAL TOLERANCE")
+        ],
         cotes=[
             Cote(valeur=d["value"], tolerance=d.get("tolerance"), texte=f"{d['value']} {d['unit']}")
             for d in gt["dimensions"]

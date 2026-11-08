@@ -46,6 +46,7 @@ L'IA sert à **lire et comprendre le plan**. Elle ne calcule **ni la géométrie
 | [docs/logique_metier.md](docs/logique_metier.md) | Méthode de chiffrage : les 6 blocs de coût, formules, hypothèses, paramètres par défaut, contrôles de cohérence, exemple complet sur `piece_003` |
 | [docs/sources_donnees.md](docs/sources_donnees.md) | Référentiels de données nécessaires au calcul (matières, postes, temps, composants, traitements…) : structure, valeurs simulées, équivalent dans une vraie usine |
 | [docs/evaluation.md](docs/evaluation.md) | Protocole d'évaluation de l'extraction : jeux de données, dégradations, indicateurs, modèles, budget |
+| [docs/resultats.md](docs/resultats.md) | Résultats de l'évaluation (Claude Sonnet 5.5 sur cadsy et ecado) |
 | [docs/architecture.md](docs/architecture.md) | Architecture : parcours utilisateur, services, flux de données, gestion des erreurs, traçabilité et confidentialité, stack proposée |
 
 ## Démarrage
@@ -88,7 +89,8 @@ Les jeux publics sont téléchargés automatiquement dans `data/raw/`. Les résu
 │   ├── logique_metier.md        # Guide de la logique de chiffrage
 │   ├── sources_donnees.md       # Référentiels de données du chiffrage
 │   ├── architecture.md          # Architecture fonctionnelle et technique
-│   └── evaluation.md            # Protocole d'évaluation de l'extraction
+│   ├── evaluation.md            # Protocole d'évaluation de l'extraction
+│   └── resultats.md             # Résultats de l'évaluation
 ├── src/generateur_devis/
 │   ├── schema/                  # Format JSON de la pièce (Pydantic), partagé par tout le projet
 │   ├── llm/                     # Accès aux modèles : Claude Code, OpenRouter, Nous Research
@@ -116,7 +118,8 @@ Le projet est découpé en deux parties.
 - [ ] Dégradations (image, scan, photo, plans erronés)
 - [x] Chargement de cadsy et ecado, comparaison champ par champ, premiers résultats (développement)
 - [ ] Jeu de vrais plans annotés
-- [ ] Exécution sur les modèles et rapport de résultats
+- [x] Premiers résultats sur les jeux de test, avec Claude Sonnet ([docs/resultats.md](docs/resultats.md))
+- [ ] Comparaison avec d'autres modèles
 
 **Partie 2 — Outil de devis**
 
