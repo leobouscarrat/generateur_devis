@@ -46,7 +46,7 @@ L'IA sert à **lire et comprendre le plan**. Elle ne calcule **ni la géométrie
 | [docs/logique_metier.md](docs/logique_metier.md) | Méthode de chiffrage : les 6 blocs de coût, formules, hypothèses, paramètres par défaut, contrôles de cohérence, exemple complet sur `piece_003` |
 | [docs/sources_donnees.md](docs/sources_donnees.md) | Référentiels de données nécessaires au calcul (matières, postes, temps, composants, traitements…) : structure, valeurs simulées, équivalent dans une vraie usine |
 | [docs/evaluation.md](docs/evaluation.md) | Protocole d'évaluation de l'extraction : jeux de données, dégradations, indicateurs, modèles, budget |
-| [docs/resultats.md](docs/resultats.md) | Résultats de l'évaluation (Claude Sonnet 5.5 sur cadsy et ecado) |
+| [docs/resultats.md](docs/resultats.md) | Résultats de l'évaluation (Claude Sonnet 5.5 : cadsy, ecado, tôlerie générée en PDF / scan / photo, plans erronés) |
 | [docs/architecture.md](docs/architecture.md) | Architecture : parcours utilisateur, services, flux de données, gestion des erreurs, traçabilité et confidentialité, stack proposée |
 
 ## Démarrage
@@ -71,11 +71,15 @@ uv run python -m generateur_devis.extraction PLAN.pdf --modele openrouter:<modè
 
 Les réponses sont mises en cache dans `results/cache/` : un même plan n'est jamais redemandé au même modèle.
 
-Évaluer un modèle sur un jeu (cadsy, ecado ou prive), partie développement ou test :
+Évaluer un modèle sur un jeu (cadsy, ecado, prive, tolerie ou tolerie_erreurs), partie développement ou test :
 
 ```bash
 uv run python -m generateur_devis.evaluation --jeu ecado --partie dev --modele claude-code:sonnet
+uv run python -m generateur_devis.evaluation --jeu tolerie --niveau 3 --partie test   # photos
+uv run python -m generateur_devis.evaluation --jeu tolerie_erreurs --partie test      # plans erronés
 ```
+
+Niveaux du jeu tôlerie : 0 PDF propre, 1 image propre, 2 scan, 3 photo.
 
 Les jeux publics sont téléchargés automatiquement dans `data/raw/`. Les résultats détaillés sont écrits dans `results/runs/`.
 
@@ -116,10 +120,10 @@ Le projet est découpé en deux parties.
 - [x] Format de sortie : schéma JSON de la pièce ([src/generateur_devis/schema/piece.py](src/generateur_devis/schema/piece.py))
 - [x] Générateur de plans de tôlerie et mise en plan (`uv run python -m generateur_devis.generateur`)
 - [x] Accès aux modèles et extraction de bout en bout (premier essai sur piece_003)
-- [ ] Dégradations (image, scan, photo, plans erronés)
+- [x] Dégradations (scan, photo) et plans volontairement erronés
 - [x] Chargement de cadsy et ecado, comparaison champ par champ, premiers résultats (développement)
 - [ ] Jeu de vrais plans annotés
-- [x] Premiers résultats sur les jeux de test, avec Claude Sonnet ([docs/resultats.md](docs/resultats.md))
+- [x] Résultats sur tous les jeux de test, avec Claude Sonnet ([docs/resultats.md](docs/resultats.md))
 - [ ] Comparaison avec d'autres modèles
 
 **Partie 2 — Outil de devis**

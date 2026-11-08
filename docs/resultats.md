@@ -2,7 +2,7 @@
 
 Résultats obtenus avec le protocole décrit dans [evaluation.md](evaluation.md).
 
-> **État au 8 novembre 2026** : un seul modèle évalué (Claude Sonnet 5.5, via l'abonnement Claude). Jeux publics cadsy et ecado : développement et test. Plans de tôlerie générés (jeu A) : développement uniquement. Les dégradations (scan, photo) et la comparaison avec d'autres modèles restent à faire.
+> **État au 8 novembre 2026** : Claude Sonnet 5.5 (abonnement Claude) évalué sur tous les jeux de test : cadsy, ecado, plans de tôlerie générés (jeu A) en PDF propre, scan et photo, et plans volontairement erronés. La comparaison avec d'autres modèles reste à faire.
 
 ---
 
@@ -13,11 +13,11 @@ Résultats obtenus avec le protocole décrit dans [evaluation.md](evaluation.md)
 | Modèle | Claude Sonnet 5.5 (`claude-code:sonnet`, abonnement Claude) |
 | Prompt | v2 ([prompt.py](../src/generateur_devis/extraction/prompt.py)) |
 | Format de la pièce | 1.2 ([piece.py](../src/generateur_devis/schema/piece.py)) |
-| Images | Plans d'origine des jeux (niveau 1 : image propre, sans texte PDF) |
-| Jeux de test | cadsy : 30 plans · ecado : 40 plans (jamais utilisés pendant la mise au point) |
-| Coût | ~3,40 $ en équivalent API pour les 70 plans, pris sur les quotas de l'abonnement |
+| Images | Jeux publics : plans d'origine (niveau 1 : image propre, sans texte PDF). Jeu A : niveaux 0 (PDF propre), 2 (scan) et 3 (photo) |
+| Jeux de test | cadsy : 30 plans · ecado : 40 plans · tôlerie générée : 50 plans × 3 niveaux + 16 plans erronés (jamais utilisés pendant la mise au point) |
+| Coût | ~3,40 $ en équivalent API pour les 70 plans publics, ~8,50 $ pour les 166 lectures du jeu A, pris sur les quotas de l'abonnement |
 | Durée | ~20 s par plan |
-| Réponses valides | 70 / 70, sans relance |
+| Réponses valides | 236 / 236 (8 appels photo relancés après une coupure de quota, sans effet sur le contenu) |
 
 ---
 
@@ -49,24 +49,48 @@ Résultats obtenus avec le protocole décrit dans [evaluation.md](evaluation.md)
 | Tolérances géométriques : valeur | 100 % (87 / 87) | 96 – 100 % |
 | Tolérances géométriques : type (symbole) | **54 %** | 44 – 64 % |
 
-### Plans de tôlerie générés (jeu A) — développement, 15 plans
+### Plans de tôlerie générés (jeu A) — test, 50 plans × 3 niveaux
 
-Plans PDF générés avec leur bonne réponse (voir [evaluation.md §3.1](evaluation.md#31-jeu-a--plans-de-tôlerie-générés-référence-principale)) : formes plaque, L, U, Z et chapeau, trous, chanfreins et rayons de coin, écrous et goujons à sertir, traitement, notes en français ou en anglais.
+Plans PDF générés avec leur bonne réponse (voir [evaluation.md §3.1](evaluation.md#31-jeu-a--plans-de-tôlerie-générés-référence-principale)) : formes plaque, L, U, Z et chapeau, trous, chanfreins et rayons de coin, écrous et goujons à sertir, traitement, notes en français ou en anglais. Les mêmes 50 plans sont lus à trois niveaux (voir [evaluation.md §5](evaluation.md#5-niveaux-de-dégradation)) : PDF propre (texte + image), scan, photo.
 
-| Champ | Score |
+| Champ | PDF propre | Scan | Photo |
+|---|---|---|---|
+| Cartouche (référence, désignation, indice), unités | 100 % | 100 % | 100 % |
+| Matière, famille, **épaisseur** | 100 % | 100 % | 100 % |
+| **Profil de pliage** (ailes, angles) | 100 % | 100 % | **96 %** (2 cotes mal lues) |
+| Nombre de plis | 100 % | 100 % | 100 % |
+| Encombrement | 100 % | **92 %** | **94 %** |
+| Traitement (désignation / type) | 98 % / 100 % | 100 % | 100 % |
+| Tolérance générale (y compris 11 absences) | 100 % | 100 % | 100 % |
+| Trous (67), coins (60), composants à sertir (24) | 100 % | 100 % | 100 % |
+| Notes (123) | 99 % | 99 % | 100 % |
+| Cotes (339) | 100 % | 100 % | 100 % |
+
+IC 95 % : 93 – 100 % pour un champ à 100 % sur 50 plans ; 81 – 97 % pour 92 %.
+
+**Analyse des écarts**
+- **Photo, profil de pliage** : deux cotes mal lues (98 lu 96, 77,5 lu 94). C'est l'erreur la plus gênante : elle est **silencieuse** (confiance élevée, aucune anomalie) et change le développé, donc le prix matière.
+- **Encombrement** (scan et photo) : surtout une dimension **non donnée** quand elle n'est pas cotée directement (hauteur d'un Z par exemple), plus deux lectures fausses en photo. Ce champ est recalculable par le code à partir du profil et de la largeur : on peut s'en passer.
+- **Zone d'épargne** (3 plans) : « THREADS » est traduit en « filetages ». Le sens est juste ; c'est la comparaison mot à mot qui le refuse.
+- **Écarts de rangement**, sans conséquence pour le devis : « NO PAINT ON THREADS » recopiée aussi en note ; « FINISH: PASSIVATION » gardé avec son libellé.
+
+**À retenir** : sur ces plans, le passage du PDF propre à la photo ne coûte presque rien en lecture du texte, des trous, des composants et des cotes. Les seules pertes portent sur des **chiffres de cotes mal lus** en photo (environ 1 plan sur 25). C'est ce que la validation humaine doit attraper.
+
+### Plans volontairement erronés (niveau E) — test, 16 plans
+
+| Erreur introduite | Signalée par l'IA |
 |---|---|
-| Cartouche (référence, désignation, indice), unités | 100 % |
-| Matière, famille, **épaisseur** | 100 % |
-| **Profil de pliage** (ailes, angles) et nombre de plis | 100 % |
-| Encombrement | 87 % (13 / 15) |
-| Traitement, tolérance générale (y compris absences) | 100 % |
-| Trous (29), coins (18), composants à sertir (8) | 100 % |
-| Notes | 100 % (32 / 32) |
-| Cotes | 100 % (102 / 102) |
+| Matière absente (« — » dans le cartouche) | 4 / 4 |
+| Épaisseur absente (« — » dans le cartouche) | 4 / 4 |
+| Cote d'aile manquante (non retrouvable) | 4 / 4 |
+| Cotes contradictoires (encombrement ≠ somme des ailes, écart de 5 à 20 mm) | 4 / 4 |
+| **Total** | **16 / 16** (IC 95 % : 81 – 100 %) |
 
-Écarts : deux erreurs d'encombrement (une dimension manquante, une dimension confondue avec une cote de position de trou) ; une zone d'épargne traduite (« filetages » au lieu de « THREADS » écrit sur le plan).
+Aucune valeur inventée : la matière et l'épaisseur absentes sont laissées vides avec une anomalie ; la longueur d'aile manquante n'est pas mesurée sur le dessin ; les contradictions sont décrites avec les deux valeurs (ex. « 107,25 et 112,25 tracées sur la même étendue »). Les signalements ont été relus un par un : la détection par mots-clés ne les surestime pas.
 
-Ces plans sont propres (PDF vectoriel) : les scores sur scans et photos seront plus bas. Le jeu de test (50 plans) n'a pas encore été lancé.
+### Plans de tôlerie générés — développement, 15 plans
+
+Mêmes conclusions que sur le test : 100 % partout en PDF propre, sauf l'encombrement (87 %) ; scan et photo quasi identiques ; 8 / 8 plans erronés signalés.
 
 ### Mise au point (jeux de développement)
 
@@ -77,6 +101,8 @@ Sur piece_003 (seul vrai plan de tôlerie, utilisé pour écrire le prompt) : to
 ## 3. Lecture des résultats
 
 **Ce qui est fiable**
+- Sur les plans de tôlerie générés, **tout ce qui sert au devis** (matière, épaisseur, profil de pliage, trous, coins, composants, traitement) est lu à 96 – 100 %, y compris sur scan et photo.
+- Les **erreurs du plan** (information absente, cotes contradictoires) sont signalées dans 16 cas sur 16, sans invention.
 - Le **texte du plan** (cartouche, matière, traitement, notes, unités) est lu quasiment sans erreur.
 - Les **cotes** sont retrouvées à 97 – 98 %, sur des plans simples comme sur des plans CAO denses.
 - Les **valeurs** des tolérances géométriques et des états de surface sont toutes justes.
@@ -85,9 +111,12 @@ Sur piece_003 (seul vrai plan de tôlerie, utilisé pour écrire le prompt) : to
 **Ce qui ne l'est pas**
 - Le **type de tolérance géométrique** (lecture du symbole : symétrie, rectitude, cylindricité…) n'est juste qu'une fois sur deux à deux fois sur trois. Dans la grande majorité des erreurs, le modèle répond « autre » plutôt qu'un mauvais type : il signale son incertitude au lieu d'inventer. Pour le devis, la **valeur** (le niveau d'exigence) compte davantage que le type.
 
+- Sur photo, quelques **chiffres de cotes mal lus sans signalement** (2 profils sur 50) : la confiance annoncée ne suffit pas à les repérer.
+
 **Limites de ces chiffres**
-- Ces jeux ne contiennent **ni plis ni pièces de tôlerie** : la lecture du profil de pliage, de l'épaisseur et des composants n'est mesurée que sur piece_003. C'est le rôle du jeu A (plans de tôlerie générés), encore à construire.
-- Images **propres** uniquement : l'effet d'un scan ou d'une photo reste à mesurer.
+- Les plans de tôlerie sont **générés** : plus réguliers que de vrais plans (mise en page, polices, cotation complète, plis à 90° seulement). piece_003 reste le seul vrai plan de tôlerie testé. Les scores du jeu A sont donc un **plafond**, pas une prévision.
+- Scan et photo sont **simulés** : pas de pliure du papier, de reflet, d'annotation manuscrite ni de photo partielle.
+- Les jeux publics (cadsy, ecado) ne contiennent pas de plis ; ils mesurent surtout la lecture du texte et des cotes.
 - Précision des cotes cadsy (84 %) : la bonne réponse ignore les annotations composées (profondeurs de perçage, oblongs), que le modèle lit pourtant. Une partie des cotes « en trop » sont donc justes.
 - Un seul modèle : pas encore de comparaison qualité / coût.
 
@@ -114,11 +143,12 @@ De même, l'annotation de piece_003 a été alignée sur les conventions v2 (not
 | Prompt v2 / format 1.2 | Champs `tolerances_geometriques` et `etats_surface` ; consigne sur les soudures isolées et sur le rangement des informations | Soudures 5 / 5 ; notes ecado sans éléments en trop |
 | Générateur, 1re version | Ailes cotées à l'axe de la tôle, avec encombrement extérieur en plus | Profil de pliage juste à 33 % : le modèle lit les cotes extérieures, convention courante en tôlerie. Ambiguïté du générateur, pas erreur du modèle |
 | Générateur, 2e version | Ailes cotées à l'extérieur, sans cote redondante | Profil de pliage juste à 100 % |
+| Dégradations et niveau E | Scan, photo et plans erronés ajoutés (prompt inchangé) | Scan / photo : seul l'encombrement baisse (87 – 93 %) ; plans erronés 8 / 8 signalés |
 
 ---
 
 ## 6. Prochaines étapes
 
-1. **Jeu A, test** : lancer les 50 plans de test.
-2. **Dégradations** (scan, photo, plans erronés) sur les jeux existants.
-3. **Autres modèles** (modèle économique, modèle open source) pour la comparaison qualité / coût.
+1. **Autres modèles** (modèle économique, modèle open source) pour la comparaison qualité / coût, sur les mêmes jeux de test.
+2. **Vrais plans** : quelques plans de tôlerie réels annotés à la main (ou MechAtlas, voir [evaluation.md](evaluation.md)) pour vérifier l'écart avec les plans générés.
+3. **Contrôles par le code** dans l'outil : recalculer l'encombrement à partir du profil, vérifier la somme des ailes, pour attraper les cotes mal lues en photo.
