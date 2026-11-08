@@ -1,0 +1,25 @@
+# Secrets (clé OpenRouter, etc.)
+.env
+*.env
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Données volumineuses ou générées (jeux d'évaluation, plans générés, résultats)
+data/raw/
+data/generated/
+results/
+*.parquet
+
+# Éditeurs / OS
+.vscode/
+.idea/
+.DS_Store
+
+# Documents de l'exercice (confidentiels, hors dépôt)
+exercise_information/
