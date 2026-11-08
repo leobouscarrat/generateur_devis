@@ -564,75 +564,13 @@ Chaque modification est datée et attribuée. Les devis déjà émis ne sont pas
 
 ## 15. Évaluation de l'extraction
 
-L'extraction est la seule étape non déterministe : c'est elle qu'il faut mesurer. Il faut pour cela des plans dont on connaît **les bonnes réponses**.
+L'extraction est la seule étape non déterministe : c'est elle qu'il faut mesurer. Le protocole complet est décrit dans **[evaluation.md](evaluation.md)**.
 
-### 15.1 Principe : générer des pièces et leurs plans
-
-Plutôt que d'annoter des plans à la main, on **génère** des pièces de tôlerie avec des paramètres aléatoires réalistes, puis leurs plans. La description de la pièce sert de bonne réponse.
-
-```mermaid
-flowchart LR
-    G["Générateur de pièces<br/>paramètres aléatoires<br/>réalistes"] --> V["Bonne réponse<br/>(JSON de la pièce)"]
-    G --> M["Modèle 3D<br/>+ pièce à plat"]
-    M --> D["Mise en plan<br/>vues, cotes,<br/>cartouche, notes"]
-    D --> DEG["Dégradations<br/>scan, flou, photo,<br/>infos manquantes"]
-    DEG --> EXT["Extraction (IA)<br/>modèle A, B, C…"]
-    EXT --> CMP["Comparaison<br/>champ par champ"]
-    V --> CMP
-    CMP --> S["Scores par champ,<br/>par modèle, par<br/>niveau de dégradation"]
-```
-
-Avantages :
-- **bonnes réponses exactes et gratuites**, en quantité illimitée ;
-- **aucun problème de confidentialité** : aucun plan client n'est utilisé ;
-- **difficulté maîtrisée** : on peut mesurer précisément l'effet d'un scan ou d'une photo ;
-- **réutilise le module de géométrie** de l'outil : le générateur et l'outil partagent la même description de pièce.
-
-### 15.2 Ce qui est généré
-
-| Élément | Variations |
-|---|---|
-| Forme | Plaque plate, L, U, Z, chapeau ; 0 à 4 plis parallèles |
-| Dimensions | Épaisseur 1 à 6 mm, flan 30 à 500 mm, ailes, rayons |
-| Contours intérieurs | 0 à 12 trous (Ø 3 à 20 mm), oblongs, répétitions « 2x » |
-| Chanfreins, rayons d'angle | Aléatoires |
-| Composants | 0 à 4 écrous / goujons à sertir dans une nomenclature |
-| Cartouche et notes | Matière, traitement, tolérance générale, rayon de pliage ; parfois absents |
-| Mise en page | Polices, position des cotes, langue (FR / EN), présence d'une vue 3D |
-
-La mise en plan (vues de dessus et de côté, lignes de cote, cartouche) est dessinée par du code. Pour des pièces à plis parallèles, la vue de côté est le profil de pliage et la vue de dessus contient les trous et les lignes de pli : c'est faisable avec matplotlib ou ezdxf.
-
-### 15.3 Niveaux de dégradation
-
-| Niveau | Description | Ce qu'on teste |
-|---|---|---|
-| 0 | PDF vectoriel propre | Lecture du texte PDF + compréhension |
-| 1 | PDF transformé en image (sans texte lisible) | Lecture de l'image seule |
-| 2 | Scan : basse résolution, bruit, légère rotation | Robustesse au scan |
-| 3 | Photo : perspective, ombre, flou, reflets | Robustesse au parcours tablette / téléphone |
-| E | Plan **volontairement erroné** : matière absente, cote manquante, cotes contradictoires | L'IA signale-t-elle le problème, ou invente-t-elle une valeur ? |
-
-### 15.4 Mesures
-
-| Mesure | Définition |
-|---|---|
-| Exactitude par champ | Valeur juste (tolérance ±0,5 mm pour les cotes) |
-| Comptage | Nombre de trous, plis, composants correct |
-| **Taux d'invention** | Part des champs absents du plan pour lesquels l'IA donne quand même une valeur |
-| Fiabilité de la confiance | Les champs à faible confiance sont-ils bien ceux qui sont faux ? |
-| **Écart de prix** | Écart entre le prix calculé à partir de l'extraction et le prix calculé à partir de la bonne réponse. C'est la mesure qui parle au métier |
-| Coût et durée | Par plan et par modèle |
-
-Avec OpenRouter, le même jeu peut être passé sur plusieurs modèles pour choisir le meilleur compromis qualité / coût.
-
-### 15.5 Limites et compléments
-
-- **Écart avec les vrais plans** : des plans générés sont plus propres et plus homogènes que des plans réels (styles de cartouche, normes de cotation, annotations manuscrites). On réduit cet écart en variant la mise en page, et on le mesure en complétant avec :
-  - **quelques plans réels annotés à la main** : piece_003, puis des plans autorisés (voir [section 11.5](#115-améliorer-loutil-sans-entraîner-de-modèle)) ;
-  - **des jeux publics**, après vérification de leur licence :
-    - [CADExpert](https://huggingface.co/datasets/morgan/CADExpert_fixed) : mises en plan cotées de pièces mécaniques, utile pour tester la lecture des cotes ;
-    - [TechMB](https://huggingface.co/datasets/WSKL/techmb) : questions de fabricabilité sur des mises en plan, utile pour l'étape 3.
-- [NVIDIA SimReady](https://huggingface.co/blog/nvidia/simready-central-assets-robotics-ai-factories) n'est pas adapté : ce sont des objets 3D pour la simulation robotique, sans cotes, sans géométrie CAO exacte et sans pièces de tôlerie.
+En résumé :
+- **trois jeux de données** : des plans de tôlerie générés avec leurs bonnes réponses (référence principale), quelques vrais plans annotés à la main (contrôle de réalisme), et CADExpert (repli et complément) ;
+- **plusieurs niveaux de dégradation** : PDF propre, image, scan, photo, plans volontairement erronés ;
+- **des indicateurs orientés métier** : exactitude par champ, taux d'invention, fiabilité de la confiance annoncée, et surtout **écart sur le prix final** ;
+- **4 à 6 modèles** comparés via OpenRouter, avec une séparation stricte entre jeu de développement et jeu de test.
 
 ---
 
@@ -644,11 +582,11 @@ Avec OpenRouter, le même jeu peut être passé sur plusieurs modèles pour choi
 - [x] Interface : Streamlit
 - [x] Fournisseur IA pour le prototype : OpenRouter
 - [x] Modèle 3D dès la V1 (abandonné s'il s'avère trop coûteux à mettre au point)
-- [x] Évaluation : jeu synthétique généré + quelques plans réels
+- [x] Évaluation : plans générés + vrais plans annotés + CADExpert en repli ([evaluation.md](evaluation.md))
 - [x] Gestion des utilisateurs et des rôles : hors périmètre
 
 **Ouvert**
 
-- [ ] Modèles à comparer via OpenRouter
-- [ ] Taille du jeu d'évaluation synthétique (ordre de grandeur : 50 à 200 plans)
-- [ ] Licences de CADExpert et TechMB à vérifier avant usage
+- [ ] Modèles à comparer via OpenRouter (liste exacte au moment de l'exécution)
+- [ ] Contenu réel des plans des projets open source candidats (jeu B)
+- [ ] Plans réels anonymisés fournis par l'entreprise (à demander)

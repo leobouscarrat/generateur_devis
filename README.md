@@ -2,7 +2,7 @@
 
 Prototype d'un outil interne qui génère automatiquement un devis à partir d'un plan technique de pièce de tôlerie ou d'usinage.
 
-Projet réalisé dans le cadre du cas pratique « Data Scientist » du groupe Maji (voir [exercise_information/](exercise_information/)).
+Projet réalisé dans le cadre du cas pratique « Data Scientist » du groupe Maji.
 
 ## Contexte
 
@@ -45,6 +45,7 @@ L'IA sert à **lire et comprendre le plan**. Elle ne calcule **ni la géométrie
 |---|---|
 | [docs/logique_metier.md](docs/logique_metier.md) | Méthode de chiffrage : les 6 blocs de coût, formules, hypothèses, paramètres par défaut, contrôles de cohérence, exemple complet sur `piece_003` |
 | [docs/sources_donnees.md](docs/sources_donnees.md) | Référentiels de données nécessaires au calcul (matières, postes, temps, composants, traitements…) : structure, valeurs simulées, équivalent dans une vraie usine |
+| [docs/evaluation.md](docs/evaluation.md) | Protocole d'évaluation de l'extraction : jeux de données, dégradations, indicateurs, modèles, budget |
 | [docs/architecture.md](docs/architecture.md) | Architecture : parcours utilisateur, services, flux de données, gestion des erreurs, traçabilité et confidentialité, stack proposée |
 
 ## Structure du dépôt
@@ -55,23 +56,31 @@ L'IA sert à **lire et comprendre le plan**. Elle ne calcule **ni la géométrie
 ├── docs/
 │   ├── logique_metier.md        # Guide de la logique de chiffrage
 │   ├── sources_donnees.md       # Référentiels de données du chiffrage
-│   └── architecture.md          # Architecture fonctionnelle et technique
-└── exercise_information/        # Énoncé et documents fournis
-    ├── Cas Pratique Responsable Data Scientist.pdf
-    ├── piece_003.pdf            # Exemple de plan
-    └── devis.pdf                # Exemple de fiche de devis attendue
+│   ├── architecture.md          # Architecture fonctionnelle et technique
+│   └── evaluation.md            # Protocole d'évaluation de l'extraction
+└── exercise_information/        # Énoncé et documents fournis (local uniquement, non versionné)
 ```
 
 ## Avancement
 
-- [x] Étude de la logique métier du chiffrage tôlerie ([docs/logique_metier.md](docs/logique_metier.md))
-- [x] Définition des référentiels de données ([docs/sources_donnees.md](docs/sources_donnees.md))
+Le projet est découpé en deux parties.
+
+**Partie 1 — Évaluation de la qualité de l'extraction** (en cours, voir [docs/evaluation.md](docs/evaluation.md))
+
+- [x] Protocole d'évaluation
+- [ ] Format de sortie (schéma JSON de la pièce)
+- [ ] Générateur de pièces de tôlerie et mise en plan
+- [ ] Dégradations (image, scan, photo, plans erronés)
+- [ ] Jeu de vrais plans annotés
+- [ ] Chargement de CADExpert
+- [ ] Exécution sur les modèles et rapport de résultats
+
+**Partie 2 — Outil de devis**
+
+- [x] Logique métier du chiffrage ([docs/logique_metier.md](docs/logique_metier.md))
+- [x] Référentiels de données ([docs/sources_donnees.md](docs/sources_donnees.md))
+- [x] Architecture ([docs/architecture.md](docs/architecture.md)) et stack : Python, Streamlit, OpenRouter
 - [ ] Création des données simulées
-- [x] Architecture fonctionnelle et technique ([docs/architecture.md](docs/architecture.md))
-- [x] Choix de la stack : Python, Streamlit, OpenRouter
-- [ ] Extraction des caractéristiques depuis un plan
-- [ ] Jeu d'évaluation synthétique (génération de plans + dégradations)
+- [ ] Extraction, géométrie et faisabilité
 - [ ] Moteur de calcul des coûts
-- [ ] Génération du devis
-- [ ] Interface utilisateur
-- [ ] Contrôles de fiabilité
+- [ ] Interface et génération du devis
