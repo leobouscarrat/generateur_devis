@@ -4,7 +4,7 @@ Usage :
     uv run python -m generateur_devis.evaluation --jeu ecado --partie dev --modele claude-code:sonnet
     uv run python -m generateur_devis.evaluation --jeu cadsy --partie test --limite 10
 
-Jeux : cadsy, ecado, prive (plans annotés à la main dans data/prive/).
+Jeux : cadsy, ecado, prive (plans annotés à la main dans data/prive/), tolerie (plans générés).
 """
 
 import argparse
@@ -19,7 +19,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawTextHelpFormatter
     )
-    parser.add_argument("--jeu", required=True, choices=["cadsy", "ecado", "prive"])
+    parser.add_argument("--jeu", required=True, choices=["cadsy", "ecado", "prive", "tolerie"])
     parser.add_argument("--partie", default="dev", choices=["dev", "test"])
     parser.add_argument("--modele", default="claude-code:sonnet")
     parser.add_argument("--limite", type=int, help="Ne traiter que les N premiers plans")

@@ -341,6 +341,44 @@ def charger_prive() -> Jeu:
     return Jeu("prive", list(CHAMPS), echantillons)
 
 
+# --- tolerie : plans de tôlerie générés (jeu A) -------------------------------------------
+
+CHAMPS_TOLERIE = [
+    "unites",
+    "identification.reference",
+    "identification.designation",
+    "identification.indice",
+    "matiere.designation",
+    "matiere.famille",
+    "matiere.epaisseur",
+    "encombrement",
+    "profil_pliage",
+    "nb_plis",
+    "traitement.designation",
+    "traitement.type",
+    "tolerance_generale",
+    "trous",
+    "coins",
+    "composants",
+    "traitement.zones_epargne",
+    "notes",
+    "cotes",
+]
+NOMBRES_TOLERIE = {"dev": 15, "test": 50}
+
+
+def charger_tolerie(partie: str) -> Jeu:
+    from generateur_devis.generateur import generer_jeu
+
+    dossier = generer_jeu(partie, NOMBRES_TOLERIE[partie])
+    echantillons = []
+    for verite_json in sorted(dossier.glob(f"{partie}-*.json"))[: NOMBRES_TOLERIE[partie]]:
+        verite = PieceExtraite.model_validate_json(verite_json.read_text(encoding="utf-8"))
+        plan = charger_plan(verite_json.with_suffix(".pdf"))
+        echantillons.append(Echantillon("tolerie", verite_json.stem, plan, verite))
+    return Jeu("tolerie", CHAMPS_TOLERIE, echantillons)
+
+
 def charger_jeu(nom: str, partie: str = "dev") -> Jeu:
     if nom == "cadsy":
         return charger_cadsy(partie)
@@ -348,4 +386,6 @@ def charger_jeu(nom: str, partie: str = "dev") -> Jeu:
         return charger_ecado(partie)
     if nom == "prive":
         return charger_prive()
-    raise ValueError(f"Jeu inconnu : {nom} (cadsy, ecado, prive)")
+    if nom == "tolerie":
+        return charger_tolerie(partie)
+    raise ValueError(f"Jeu inconnu : {nom} (cadsy, ecado, prive, tolerie)")
