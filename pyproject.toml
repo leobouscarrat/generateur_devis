@@ -5,7 +5,10 @@ description = "Prototype de génération de devis tôlerie à partir de plans, e
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "httpx>=0.28.1",
     "pydantic>=2.7",
+    "pymupdf>=2.1",
+    "python-dotenv>=1.2.4",
 ]
 
 [dependency-groups]

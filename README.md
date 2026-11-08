@@ -59,6 +59,17 @@ uv run pytest                                    # lance les tests
 uv run python -m generateur_devis.schema.export  # régénère le JSON Schema de la pièce
 ```
 
+Extraire un plan avec un modèle :
+
+```bash
+# Abonnement Claude, via Claude Code (aucune clé à fournir si l'extension VS Code est connectée)
+uv run python -m generateur_devis.extraction PLAN.pdf --modele claude-code:sonnet
+# OpenRouter (clé OPENROUTER_API_KEY dans .env)
+uv run python -m generateur_devis.extraction PLAN.pdf --modele openrouter:<modèle> --sortie fiche.json
+```
+
+Les réponses sont mises en cache dans `results/cache/` : un même plan n'est jamais redemandé au même modèle.
+
 ## Structure du dépôt
 
 ```
@@ -71,7 +82,9 @@ uv run python -m generateur_devis.schema.export  # régénère le JSON Schema de
 │   ├── architecture.md          # Architecture fonctionnelle et technique
 │   └── evaluation.md            # Protocole d'évaluation de l'extraction
 ├── src/generateur_devis/
-│   └── schema/                  # Format JSON de la pièce (Pydantic), partagé par tout le projet
+│   ├── schema/                  # Format JSON de la pièce (Pydantic), partagé par tout le projet
+│   ├── llm/                     # Accès aux modèles : Claude Code, OpenRouter, Nous Research
+│   └── extraction/              # Plan → images + texte, prompt, validation, cache
 ├── schemas/
 │   └── piece_extraite.schema.json  # Export JSON Schema du format (généré)
 ├── exemples/
@@ -90,6 +103,7 @@ Le projet est découpé en deux parties.
 - [x] Protocole d'évaluation
 - [x] Format de sortie : schéma JSON de la pièce ([src/generateur_devis/schema/piece.py](src/generateur_devis/schema/piece.py))
 - [ ] Générateur de pièces de tôlerie et mise en plan
+- [x] Accès aux modèles et extraction de bout en bout (premier essai sur piece_003)
 - [ ] Dégradations (image, scan, photo, plans erronés)
 - [ ] Jeu de vrais plans annotés
 - [ ] Chargement de CADExpert
