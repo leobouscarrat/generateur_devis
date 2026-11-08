@@ -2,7 +2,7 @@
 
 Résultats obtenus avec le protocole décrit dans [evaluation.md](evaluation.md).
 
-> **État au 8 novembre 2026** : un seul modèle évalué (Claude Sonnet 5.5, via l'abonnement Claude), sur les jeux publics cadsy et ecado. Le jeu de plans de tôlerie générés (jeu A), les dégradations (scan, photo) et la comparaison avec d'autres modèles restent à faire.
+> **État au 8 novembre 2026** : un seul modèle évalué (Claude Sonnet 5.5, via l'abonnement Claude). Jeux publics cadsy et ecado : développement et test. Plans de tôlerie générés (jeu A) : développement uniquement. Les dégradations (scan, photo) et la comparaison avec d'autres modèles restent à faire.
 
 ---
 
@@ -49,6 +49,25 @@ Résultats obtenus avec le protocole décrit dans [evaluation.md](evaluation.md)
 | Tolérances géométriques : valeur | 100 % (87 / 87) | 96 – 100 % |
 | Tolérances géométriques : type (symbole) | **54 %** | 44 – 64 % |
 
+### Plans de tôlerie générés (jeu A) — développement, 15 plans
+
+Plans PDF générés avec leur bonne réponse (voir [evaluation.md §3.1](evaluation.md#31-jeu-a--plans-de-tôlerie-générés-référence-principale)) : formes plaque, L, U, Z et chapeau, trous, chanfreins et rayons de coin, écrous et goujons à sertir, traitement, notes en français ou en anglais.
+
+| Champ | Score |
+|---|---|
+| Cartouche (référence, désignation, indice), unités | 100 % |
+| Matière, famille, **épaisseur** | 100 % |
+| **Profil de pliage** (ailes, angles) et nombre de plis | 100 % |
+| Encombrement | 87 % (13 / 15) |
+| Traitement, tolérance générale (y compris absences) | 100 % |
+| Trous (29), coins (18), composants à sertir (8) | 100 % |
+| Notes | 100 % (32 / 32) |
+| Cotes | 100 % (102 / 102) |
+
+Écarts : deux erreurs d'encombrement (une dimension manquante, une dimension confondue avec une cote de position de trou) ; une zone d'épargne traduite (« filetages » au lieu de « THREADS » écrit sur le plan).
+
+Ces plans sont propres (PDF vectoriel) : les scores sur scans et photos seront plus bas. Le jeu de test (50 plans) n'a pas encore été lancé.
+
 ### Mise au point (jeux de développement)
 
 Sur piece_003 (seul vrai plan de tôlerie, utilisé pour écrire le prompt) : tous les champs justes (épaisseur, encombrement, profil en Z avec 2 plis à 90°, trous, chanfreins, écrous à sertir, tolérances), matière absente correctement signalée. Une note sur quatre manquée.
@@ -93,11 +112,13 @@ De même, l'annotation de piece_003 a été alignée sur les conventions v2 (not
 |---|---|---|
 | Prompt v1 / format 1.1 | Version initiale | Soudures isolées manquées (3 / 5 plans ecado) ; états de surface et tolérances géométriques rangés dans les notes |
 | Prompt v2 / format 1.2 | Champs `tolerances_geometriques` et `etats_surface` ; consigne sur les soudures isolées et sur le rangement des informations | Soudures 5 / 5 ; notes ecado sans éléments en trop |
+| Générateur, 1re version | Ailes cotées à l'axe de la tôle, avec encombrement extérieur en plus | Profil de pliage juste à 33 % : le modèle lit les cotes extérieures, convention courante en tôlerie. Ambiguïté du générateur, pas erreur du modèle |
+| Générateur, 2e version | Ailes cotées à l'extérieur, sans cote redondante | Profil de pliage juste à 100 % |
 
 ---
 
 ## 6. Prochaines étapes
 
-1. **Jeu A** : générateur de plans de tôlerie (plis, épaisseur, composants, notes) — mesure des champs propres à la tôlerie.
+1. **Jeu A, test** : lancer les 50 plans de test.
 2. **Dégradations** (scan, photo, plans erronés) sur les jeux existants.
 3. **Autres modèles** (modèle économique, modèle open source) pour la comparaison qualité / coût.

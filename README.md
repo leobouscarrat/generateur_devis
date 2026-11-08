@@ -95,7 +95,8 @@ Les jeux publics sont téléchargés automatiquement dans `data/raw/`. Les résu
 │   ├── schema/                  # Format JSON de la pièce (Pydantic), partagé par tout le projet
 │   ├── llm/                     # Accès aux modèles : Claude Code, OpenRouter, Nous Research
 │   ├── extraction/              # Plan → images + texte, prompt, validation, cache
-│   └── evaluation/              # Jeux (cadsy, ecado, privé), comparaison champ par champ, synthèse
+│   ├── generateur/              # Générateur de plans de tôlerie avec leur bonne réponse
+│   └── evaluation/              # Jeux (cadsy, ecado, privé, tôlerie), comparaison champ par champ, synthèse
 ├── schemas/
 │   └── piece_extraite.schema.json  # Export JSON Schema du format (généré)
 ├── exemples/
@@ -113,7 +114,7 @@ Le projet est découpé en deux parties.
 
 - [x] Protocole d'évaluation
 - [x] Format de sortie : schéma JSON de la pièce ([src/generateur_devis/schema/piece.py](src/generateur_devis/schema/piece.py))
-- [ ] Générateur de pièces de tôlerie et mise en plan
+- [x] Générateur de plans de tôlerie et mise en plan (`uv run python -m generateur_devis.generateur`)
 - [x] Accès aux modèles et extraction de bout en bout (premier essai sur piece_003)
 - [ ] Dégradations (image, scan, photo, plans erronés)
 - [x] Chargement de cadsy et ecado, comparaison champ par champ, premiers résultats (développement)

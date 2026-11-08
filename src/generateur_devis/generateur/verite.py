@@ -1,6 +1,11 @@
 """Bonne réponse d'une pièce générée, au format de la pièce."""
 
-from generateur_devis.generateur.modele import COMPOSANTS, Geometrie, SpecPiece
+from generateur_devis.generateur.modele import (
+    COMPOSANTS,
+    Geometrie,
+    SpecPiece,
+    longueurs_exterieures,
+)
 from generateur_devis.schema import (
     Aile,
     Champ,
@@ -22,7 +27,7 @@ from generateur_devis.schema import (
 
 def verite(spec: SpecPiece, geo: Geometrie, cotes: list[Cote]) -> PieceExtraite:
     elements: list = []
-    for i, longueur in enumerate(spec.ailes):
+    for i, longueur in enumerate(longueurs_exterieures(spec)):
         elements.append(Aile(longueur=longueur))
         if i < len(spec.virages):
             elements.append(Pli(angle=90, sens="haut" if spec.virages[i] > 0 else "bas"))
@@ -62,7 +67,7 @@ def verite(spec: SpecPiece, geo: Geometrie, cotes: list[Cote]) -> PieceExtraite:
             hauteur=Champ(valeur=geo.hauteur),
         ),
         profil_pliage=ProfilPliage(
-            cotation="inconnue",
+            cotation="exterieure" if spec.virages else "inconnue",
             elements=elements,
             rayon_pliage_general=spec.rayon if spec.rayon_en_note else None,
         ),

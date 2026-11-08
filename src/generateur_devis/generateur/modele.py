@@ -8,7 +8,8 @@ largeur, trous, coins, matière, traitement, notes… La même description sert 
 Conventions géométriques :
 - le profil est dessiné dans le plan (x, z) de la vue de côté, la pièce est extrudée sur
   la largeur (axe y) ;
-- les longueurs d'ailes sont mesurées sur la fibre moyenne (cotation « à l'axe ») ;
+- `ailes` contient les longueurs sur la fibre moyenne ; le plan et la bonne réponse les
+  cotent à l'extérieur (voir `longueurs_exterieures`) ;
 - seuls les plis à 90° sont générés ; les trous et les coins ne sont placés que sur les
   ailes horizontales, visibles dans la vue de dessus.
 """
@@ -200,6 +201,15 @@ def geometrie(spec: SpecPiece) -> Geometrie:
     return Geometrie(decale, contour, round(xmax - xmin, 3), round(zmax - zmin, 3), caps)
 
 
+def longueurs_exterieures(spec: SpecPiece) -> list[float]:
+    """Longueur de chaque aile cotée à l'extérieur : + une demi-épaisseur par pli adjacent."""
+    dernier = len(spec.ailes) - 1
+    return [
+        round(longueur + spec.epaisseur / 2 * ((i > 0) + (i < dernier)), 3)
+        for i, longueur in enumerate(spec.ailes)
+    ]
+
+
 # --- Tirage --------------------------------------------------------------------------------
 
 
@@ -250,7 +260,8 @@ def _tirer_trous(rng: random.Random, spec: SpecPiece, geo: Geometrie) -> None:
             spec.quantite_composant = groupe.quantite
             composant_place = True
         elif rng.random() < 0.25:
-            groupe.tolerance = rng.choice(["+0,1/0", "H11", "±0,1"])
+            tolerance = rng.choice(["+0,1/0", "H11", "±0,1"])
+            groupe.tolerance = tolerance if spec.virgule else tolerance.replace(",", ".")
         spec.trous.append(groupe)
     if not composant_place:  # aucune aile assez grande : pas de composant
         spec.composant = None

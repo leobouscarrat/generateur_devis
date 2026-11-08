@@ -14,7 +14,12 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 from matplotlib.patches import Circle, Polygon, Rectangle  # noqa: E402
 
-from generateur_devis.generateur.modele import COMPOSANTS, Geometrie, SpecPiece  # noqa: E402
+from generateur_devis.generateur.modele import (  # noqa: E402
+    COMPOSANTS,
+    Geometrie,
+    SpecPiece,
+    longueurs_exterieures,
+)
 from generateur_devis.schema import Cote  # noqa: E402
 
 FORMATS = {"A4": (297.0, 210.0), "A3": (420.0, 297.0)}
@@ -253,18 +258,26 @@ def _vue_cote(f: Feuille, geo: Geometrie, ox: float, oy: float, e: float) -> Non
     if spec.forme == "plaque":
         f.cote(P(0, 0), P(geo.longueur, 0), -8, spec.ailes[0])
         return
-    # Une cote par aile, du côté extérieur de la pièce.
-    for i, longueur in enumerate(spec.ailes):
+    # Une cote par aile, cotée à l'extérieur (comme sur un vrai plan de tôlerie).
+    cotes_ailes = longueurs_exterieures(spec)
+    dernier = len(spec.ailes) - 1
+    for i, longueur in enumerate(cotes_ailes):
         (x1, z1), (x2, z2) = geo.points[i], geo.points[i + 1]
+        ux, uz = (x2 - x1) / spec.ailes[i], (z2 - z1) / spec.ailes[i]
+        # Prolonge la cote d'une demi-épaisseur du côté de chaque pli (face extérieure).
+        if i > 0:
+            x1, z1 = x1 - ux * spec.epaisseur / 2, z1 - uz * spec.epaisseur / 2
+        if i < dernier:
+            x2, z2 = x2 + ux * spec.epaisseur / 2, z2 + uz * spec.epaisseur / 2
         mx, mz = (x1 + x2) / 2, (z1 + z2) / 2
-        nx, nz = -(z2 - z1), x2 - x1  # normale à gauche du sens de parcours
-        exterieur = (mx + nx * 0.01 - cx) ** 2 + (mz + nz * 0.01 - cz) ** 2 > (mx - cx) ** 2 + (
-            mz - cz
-        ) ** 2
+        nx, nz = -uz, ux  # normale à gauche du sens de parcours
+        exterieur = (mx + nx - cx) ** 2 + (mz + nz - cz) ** 2 > (mx - cx) ** 2 + (mz - cz) ** 2
         f.cote(P(x1, z1), P(x2, z2), 7 if exterieur else -7, longueur)
-    # Encombrement : longueur sous la vue, hauteur à gauche.
-    f.cote(P(0, 0), P(geo.longueur, 0), -16, geo.longueur)
-    f.cote(P(0, 0), P(0, geo.hauteur), 16, geo.hauteur)
+    # Encombrement, seulement s'il n'est pas déjà donné par une cote d'aile.
+    if not any(abs(geo.longueur - c) < 1e-6 for c in cotes_ailes):
+        f.cote(P(0, 0), P(geo.longueur, 0), -16, geo.longueur)
+    if not any(abs(geo.hauteur - c) < 1e-6 for c in cotes_ailes):
+        f.cote(P(0, 0), P(0, geo.hauteur), 16, geo.hauteur)
 
 
 # --- Cartouche, notes, nomenclature ------------------------------------------------------
