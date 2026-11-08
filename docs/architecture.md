@@ -567,10 +567,10 @@ Chaque modification est datée et attribuée. Les devis déjà émis ne sont pas
 L'extraction est la seule étape non déterministe : c'est elle qu'il faut mesurer. Le protocole complet est décrit dans **[evaluation.md](evaluation.md)**.
 
 En résumé :
-- **trois jeux de données** : des plans de tôlerie générés avec leurs bonnes réponses (référence principale), quelques vrais plans annotés à la main (contrôle de réalisme), et CADExpert (repli et complément) ;
-- **plusieurs niveaux de dégradation** : PDF propre, image, scan, photo, plans volontairement erronés ;
-- **des indicateurs orientés métier** : exactitude par champ, taux d'invention, fiabilité de la confiance annoncée, et surtout **écart sur le prix final** ;
-- **4 à 6 modèles** comparés via OpenRouter, avec une séparation stricte entre jeu de développement et jeu de test.
+- **des jeux complémentaires** : des plans de tôlerie générés avec leurs bonnes réponses (référence principale), des plans publics réalistes (cadsy) et orientés devis (ecado), CADExpert en repli ;
+- **plusieurs niveaux de dégradation** : PDF propre, scan, photo, plans volontairement erronés ;
+- **un indicateur principal, l'exactitude par champ**, complété par le taux d'invention et la fiabilité de la confiance annoncée. L'écart sur le prix final sera ajouté avec la partie 2 ;
+- **3 modèles** (abonnement Claude, modèle économique et modèle open source via OpenRouter), avec une séparation stricte entre jeu de développement et jeu de test, pour un budget de quelques euros.
 
 ---
 
@@ -582,11 +582,10 @@ En résumé :
 - [x] Interface : Streamlit
 - [x] Fournisseur IA pour le prototype : OpenRouter
 - [x] Modèle 3D dès la V1 (abandonné s'il s'avère trop coûteux à mettre au point)
-- [x] Évaluation : plans générés + vrais plans annotés + CADExpert en repli ([evaluation.md](evaluation.md))
+- [x] Évaluation : plans générés + jeux publics (cadsy, ecado), CADExpert en repli ([evaluation.md](evaluation.md))
 - [x] Gestion des utilisateurs et des rôles : hors périmètre
 
 **Ouvert**
 
-- [ ] Modèles à comparer via OpenRouter (liste exacte au moment de l'exécution)
-- [ ] Contenu réel des plans des projets open source candidats (jeu B)
+- [ ] Modèles exacts : disponibilité d'un modèle image sur Nous Research, modèles gratuits OpenRouter, quotas de l'abonnement Claude
 - [ ] Plans réels anonymisés fournis par l'entreprise (à demander)
