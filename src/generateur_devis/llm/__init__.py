@@ -8,7 +8,7 @@ Un modèle est désigné par « fournisseur:modèle », par exemple :
 
 import os
 
-from dotenv import load_dotenv
+from dotenv import find_dotenv, load_dotenv
 
 from generateur_devis.llm.base import ErreurModele, Image, ModeleVision, ReponseModele
 from generateur_devis.llm.claude_code import ClaudeCode
@@ -19,7 +19,7 @@ URL_NOUS = "https://inference-api.nousresearch.com/v1"  # à vérifier avec le c
 
 
 def creer_modele(designation: str) -> ModeleVision:
-    load_dotenv()
+    load_dotenv(find_dotenv(usecwd=True))
     fournisseur, _, modele = designation.partition(":")
     if not modele:
         raise ValueError(f"Format attendu « fournisseur:modèle », reçu « {designation} »")
