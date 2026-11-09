@@ -4,7 +4,8 @@ Ce document décrit l'architecture fonctionnelle et technique de l'outil : le pa
 
 Il s'appuie sur :
 - [logique_metier.md](logique_metier.md) : les formules de chiffrage (6 blocs de coût) ;
-- [sources_donnees.md](sources_donnees.md) : les tables de référence utilisées par le calcul.
+- [sources_donnees.md](sources_donnees.md) : les tables de référence utilisées par le calcul ;
+- [resultats.md](resultats.md) : les résultats de l'étude sur la qualité de l'extraction, qui ont fixé le choix du modèle et les contrôles décrits ici.
 
 > Les schémas sont écrits en [Mermaid](https://mermaid.js.org/) : ils s'affichent sur GitHub et dans la plupart des éditeurs (extension « Markdown Preview Mermaid Support » pour VS Code), et se modifient directement dans le texte.
 
@@ -106,11 +107,25 @@ La quantité, le client et le délai ne figurent jamais sur un plan. Ils sont po
 | **Entrées** | Images des pages, texte du PDF, contexte commercial |
 | **Traitements** | Lecture du texte du PDF quand il existe (cotes, notes, nomenclature, exactes et sans OCR). L'IA comprend ensuite le dessin et produit un JSON au format imposé. |
 | **Sorties** | Pour chaque champ : valeur, **niveau de confiance**, **zone du plan** d'où il vient |
-| **Erreurs détectées** | Champs obligatoires manquants, réponse hors format, incohérence entre texte du PDF et lecture de l'IA |
+| **Erreurs détectées** | Champs obligatoires manquants, réponse hors format, incohérence entre texte du PDF et lecture de l'IA, **anomalies signalées par l'IA**, **contrôles de cohérence par le code** (voir ci-dessous) |
 
 Ce que l'IA extrait : identification (référence, désignation), matière, épaisseur, profil de pliage (ailes, angles, rayons), largeur, trous et découpes, chanfreins, nomenclature (composants), notes, traitement, tolérances.
 
 Ce que l'IA **ne calcule pas** : surface développée, longueur de coupe, masse, prix.
+
+**Signalements et contrôles.** L'étude a montré deux choses ([resultats.md](resultats.md)) :
+- l'IA **signale** bien les problèmes du plan au lieu d'inventer (information absente, cotes contradictoires, quantité de trous fausse, traitement impossible : 27 cas sur 28 avec le modèle retenu) ;
+- mais elle **recopie** la valeur écrite (« 6x Ø8,5 » donne 6 trous, même si 2 sont dessinés) et peut, sur une photo, **mal lire un chiffre sans le signaler** (2 profils de pliage sur 50).
+
+Les signalements de l'IA sont donc affichés en premier à la validation, et doublés par des **contrôles faits par le code**, qui ne dépendent pas du modèle :
+
+| Contrôle | Ce qu'il attrape |
+|---|---|
+| Somme des ailes (+ épaisseurs) = encombrement coté | Cote mal lue, cotes contradictoires |
+| Encombrement recalculé à partir du profil et de la largeur | Encombrement faux ou manquant ; aile oubliée dans le profil (la hauteur ne correspond plus : erreur fréquente des modèles plus faibles sur les pièces à 4 plis) |
+| Quantité de trous ≥ quantité de composants à sertir | Rappel de quantité incohérent |
+| Positions de trous dans les limites de la pièce | Cote de position fausse |
+| Traitement compatible avec la famille de matière (table `traitements`) | Anodisation sur acier, galvanisation sur aluminium… |
 
 ### Étape 3 — Géométrie et faisabilité
 
@@ -152,7 +167,7 @@ Chaque règle produit une **alerte** (à vérifier) ou un **blocage** (devis imp
 
 L'écran présente côte à côte :
 - le **plan d'origine**, avec surlignage de la zone d'un champ quand on clique dessus ;
-- le **formulaire** pré-rempli, avec les champs manquants ou peu sûrs en premier ;
+- le **formulaire** pré-rempli, avec en premier les **anomalies** (signalées par l'IA ou par les contrôles du code), puis les champs manquants ou peu sûrs ;
 - le **modèle 3D** et des vues dessus / côté au même cadrage que le plan, pour comparer d'un coup d'œil ;
 - les **alertes** de faisabilité ;
 - le **prix provisoire**.
@@ -378,40 +393,52 @@ Le service d'extraction passe par une **interface commune** qui permet de change
 
 Le choix du fournisseur se fait selon le réglage du client (`ia_externe_autorisee`). Un abonnement grand public ne suffit pas : il faut un **contrat API ou entreprise** avec garantie de non-réutilisation des données.
 
-**Pour le prototype : [OpenRouter](https://openrouter.ai/).** Une seule clé et une API au format OpenAI donnent accès à de nombreux modèles capables de lire des images (Claude, GPT, Gemini, Qwen-VL…). Avantages :
-- l'adaptateur n'a qu'une seule implémentation pour la V1 ;
-- on peut **comparer plusieurs modèles** sur le jeu d'évaluation en changeant un seul paramètre (voir [section 15](#15-évaluation-de-lextraction)).
+**Modèles retenus**, d'après l'étude ([section 15](#15-évaluation-de-lextraction)) :
 
-En production, OpenRouter ajoute un intermédiaire entre l'usine et le fournisseur du modèle. Ses réglages de confidentialité (exclusion des fournisseurs qui conservent les données) devront être vérifiés, ou on passera par un contrat direct avec le fournisseur retenu.
+| Usage | Modèle | Pourquoi |
+|---|---|---|
+| **Par défaut** | **Claude Sonnet 5.5**, API Anthropic (contrat entreprise) | Meilleur sur tout ce qui coûte cher en cas d'erreur (profil de pliage, signalement des problèmes) ; ~0,05 $ par plan, négligeable devant le coût d'une erreur de devis |
+| **Client qui refuse l'IA externe** | **Qwen3.8 27B**, hébergé en interne (poids publics) | Le meilleur des modèles testés après Claude ; plus de vérifications humaines à prévoir (profil de pliage juste à 78 – 88 % selon la qualité du plan) |
+| Non retenu | Gemini 2.5 Flash | Bon sur le texte, mais oublie des plis et ne signale pas les incohérences |
+
+L'adaptateur a déjà trois implémentations ([src/generateur_devis/llm/](../src/generateur_devis/llm/)) :
+- **API au format OpenAI**, pour OpenRouter, Nous Research ou un modèle hébergé en interne (vLLM et la plupart des serveurs d'inférence exposent ce format) ;
+- **Claude Code** (abonnement Claude) : utilisé **uniquement pour l'étude**, un abonnement grand public n'étant pas utilisable en production ;
+- en production, l'API Anthropic directe s'ajoutera derrière la même interface.
+
+[OpenRouter](https://openrouter.ai/) reste utile pour **comparer** de nouveaux modèles sur le jeu d'évaluation en changeant un seul paramètre. En production, il ajoute un intermédiaire entre l'usine et le fournisseur du modèle : on lui préfère un contrat direct avec le fournisseur retenu.
 
 ### 9.3 Format de sortie
 
-Chaque champ extrait suit la même structure :
+Le format est défini une seule fois, en Pydantic ([piece.py](../src/generateur_devis/schema/piece.py)), et exporté en schéma JSON ([schemas/piece_extraite.schema.json](../schemas/piece_extraite.schema.json)) envoyé au modèle. Il sert à la fois à l'IA, à la validation, au formulaire et à l'évaluation.
+
+Chaque champ simple porte sa valeur, la confiance annoncée et la zone du plan d'où il vient (en fraction de la page) :
 
 ```json
 {
-  "epaisseur_mm": {
-    "valeur": 2,
-    "confiance": 0.95,
-    "source": { "page": 1, "zone": [212, 455, 40, 60] }
-  },
   "matiere": {
-    "valeur": null,
-    "confiance": 0.0,
-    "source": null
+    "designation": { "valeur": null, "confiance": null, "source": null },
+    "epaisseur": { "valeur": 2, "confiance": 0.95, "source": { "page": 1, "zone": [0.72, 0.88, 0.2, 0.03] } }
   },
-  "plis": {
-    "valeur": [
-      { "angle_deg": 90, "rayon_int_mm": 2 },
-      { "angle_deg": 90, "rayon_int_mm": 2 }
+  "profil_pliage": {
+    "cotation": "exterieure",
+    "elements": [
+      { "type": "aile", "longueur": 18 },
+      { "type": "pli", "angle": 90, "sens": "haut" },
+      { "type": "aile", "longueur": 24 },
+      { "type": "pli", "angle": 90, "sens": "bas" },
+      { "type": "aile", "longueur": 42 }
     ],
-    "confiance": 0.8,
-    "source": { "page": 1, "zone": [212, 455, 200, 140] }
-  }
+    "confiance": 0.85
+  },
+  "anomalies": [
+    { "type": "information_manquante", "champ": "matiere.designation",
+      "description": "La matière n'est pas renseignée dans le cartouche (« — »)." }
+  ]
 }
 ```
 
-Le prompt et le schéma JSON complets seront détaillés dans un document dédié.
+Le champ `anomalies` est la sortie la plus utile de l'IA après les valeurs elles-mêmes : c'est là qu'elle dit ce qu'elle n'a pas pu lire ou ce qui lui semble faux.
 
 ---
 
@@ -426,14 +453,14 @@ flowchart TD
     N3["Niveau 3 — Prix<br/>Le prix est-il plausible ?"]
     N1 --> N2 --> N3
 
-    N1 --- C1["Champs obligatoires manquants<br/>Confiance faible<br/>Texte PDF ≠ lecture IA"]
+    N1 --- C1["Champs obligatoires manquants<br/>Anomalies signalées par l'IA<br/>Contrôles de cohérence du code<br/>Texte PDF ≠ lecture IA"]
     N2 --- C2["Pièce impossible à construire<br/>Règles experts non respectées<br/>Épaisseur ou traitement indisponible"]
     N3 --- C3["Prix hors bornes (€/kg, part matière)<br/>Écart avec l'historique<br/>Prix de référence trop ancien"]
 ```
 
 | Niveau | Détection | Correction |
 |---|---|---|
-| **1. Extraction** | Champ vide ou confiance faible, réponse hors format, désaccord entre le texte du PDF et l'IA | Champ mis en avant dans le formulaire, l'utilisateur complète ou corrige |
+| **1. Extraction** | Champ vide, anomalie signalée par l'IA, contrôle de cohérence du code en échec, réponse hors format, désaccord entre le texte du PDF et l'IA. La confiance annoncée seule ne suffit pas : les erreurs de lecture sur photo sont faites avec une confiance élevée | Champ mis en avant dans le formulaire, l'utilisateur complète ou corrige |
 | **2. Faisabilité** | Modèle 3D impossible à construire, règle non respectée, dimensions hors capacité | Alerte ou blocage avec message clair. L'utilisateur corrige, ou justifie s'il ignore une alerte |
 | **3. Prix** | Bornes de `bornes_controle`, écart > 30 % avec des pièces similaires, prix matière ancien | Alerte dans la vue interne, avec le détail du calcul pour trouver la ligne en cause |
 
@@ -523,7 +550,7 @@ Chaque modification est datée et attribuée. Les devis déjà émis ne sont pas
 
 ## 13. Stack technique proposée
 
-> **Décidé** : Python, Streamlit, OpenRouter, modèle 3D dès la V1 (abandonné s'il s'avère trop coûteux à mettre au point). Le reste est une proposition.
+> **Décidé** : Python, Streamlit, Claude Sonnet par défaut et Qwen en interne en repli (voir [section 9.2](#92-adaptateur-de-fournisseur)), modèle 3D dès la V1 (abandonné s'il s'avère trop coûteux à mettre au point). Le reste est une proposition.
 
 | Brique | Proposition | Pourquoi |
 |---|---|---|
@@ -531,8 +558,8 @@ Chaque modification est datée et attribuée. Les devis déjà émis ne sont pas
 | API | **FastAPI** | Simple, typée, documentation automatique |
 | Schémas de données | **Pydantic** | Même définition pour le format JSON de l'IA, l'API et la validation |
 | Lecture PDF | **PyMuPDF** | Texte du PDF + rendu en image |
-| Photos | **OpenCV** | Redressement, contraste, détection de flou |
-| IA | **OpenRouter** (API au format OpenAI) derrière une interface commune | Accès à plusieurs modèles, comparaison facile, changement de fournisseur sans impact |
+| IA | **Claude Sonnet** (API Anthropic) ; **Qwen** hébergé en interne en repli ; OpenRouter pour les comparaisons. Une interface commune | Choix fondé sur l'étude ; changement de fournisseur sans impact |
+| Photos | Pas de prétraitement imposé en V1 | Sur photo simulée, la lecture reste quasi intacte : à revoir sur les vraies photos de la phase pilote |
 | Pièce à plat et mesures | **Shapely** + **ezdxf** | Polygone 2D, aire, périmètre, export DXF |
 | Modèle 3D | **CadQuery** ou **build123d**, export GLB / STL | Construction paramétrique en Python |
 | Affichage 3D | **Plotly** (maillage 3D, intégré nativement à Streamlit) | Rotation / zoom sans développement front |
@@ -558,19 +585,52 @@ Chaque modification est datée et attribuée. Les devis déjà émis ne sont pas
 | Historique | Faux devis simulés | Import des devis Excel existants |
 | Confidentialité | Réglages par client + purge | Audit complet |
 | Utilisateurs | Hors périmètre (utilisateur unique) | Authentification, rôles (chargé d'affaires, admin, direction) |
-| Évaluation | Jeu synthétique généré + quelques plans réels annotés | Plans réels autorisés, suivi continu de la qualité |
+| Évaluation | Plans générés (propres, scan, photo, erronés, incohérents) + jeux publics + piece_003 (seul vrai plan disponible) | Phase pilote : qualité mesurée sur les vrais plans clients à partir des corrections du formulaire, puis suivi continu |
 
 ---
 
 ## 15. Évaluation de l'extraction
 
-L'extraction est la seule étape non déterministe : c'est elle qu'il faut mesurer. Le protocole complet est décrit dans **[evaluation.md](evaluation.md)**.
+L'extraction est la seule étape non déterministe : c'est elle qu'il faut mesurer. Protocole : **[evaluation.md](evaluation.md)** ; résultats : **[resultats.md](resultats.md)** ; jeux et exemples en image : **[jeux_de_test.md](jeux_de_test.md)**.
 
-En résumé :
-- **des jeux complémentaires** : des plans de tôlerie générés avec leurs bonnes réponses (référence principale), des plans publics réalistes (cadsy) et orientés devis (ecado), CADExpert en repli ;
-- **plusieurs niveaux de dégradation** : PDF propre, scan, photo, plans volontairement erronés ;
-- **un indicateur principal, l'exactitude par champ**, complété par le taux d'invention et la fiabilité de la confiance annoncée. L'écart sur le prix final sera ajouté avec la partie 2 ;
-- **3 modèles** (abonnement Claude, modèle économique et modèle open source via OpenRouter), avec une séparation stricte entre jeu de développement et jeu de test, pour un budget de quelques euros.
+### 15.1 Ce qui a été mesuré
+
+- **Plans de tôlerie générés** avec leur bonne réponse (50 plans de test : plaque, L, U, Z, chapeau ; trous, coins, composants à sertir), lus en **PDF propre, scan et photo** simulés ;
+- **plans erronés** (16) et **incohérents** (12) : l'IA signale-t-elle le problème ou invente-t-elle ?
+- **jeux publics** : cadsy (30 plans CAO réalistes) et ecado (40 plans orientés devis) ;
+- **3 modèles** avec le même prompt : Claude Sonnet 5.5, Gemini 2.5 Flash, Qwen3.8 27B (open source).
+
+### 15.2 Résultats principaux
+
+| | Claude Sonnet 5.5 | Gemini 2.5 Flash | Qwen3.8 27B |
+|---|---|---|---|
+| Profil de pliage (PDF / scan / photo) | **100 / 100 / 96 %** | 78 / 75 / 72 % | 84 / 88 / 78 % |
+| Matière, épaisseur, trous, composants, cotes | ~100 % | ~100 % | ~100 % |
+| Plans erronés signalés | **15 / 16** | 7 / 15 | 13 / 16 |
+| Plans incohérents signalés | **12 / 12** | non testé | 7 / 12 |
+| Coût par plan | ~0,05 $ | ~0,008 $ | ~0,024 $ |
+
+### 15.3 Conséquences sur l'architecture
+
+| Constat | Décision |
+|---|---|
+| Claude nettement meilleur sur la géométrie et les signalements, pour un coût négligeable | Claude Sonnet par défaut ([9.2](#92-adaptateur-de-fournisseur)) |
+| Qwen correct, à poids publics | Repli hébergé en interne pour les clients qui refusent l'IA externe |
+| L'IA recopie les valeurs écrites, même incohérentes, et peut mal lire un chiffre sur photo sans le signaler | Contrôles de cohérence par le code ([étape 2](#étape-2--extraction)) ; anomalies en tête du formulaire |
+| La confiance annoncée ne repère pas les erreurs de lecture | Ne pas trier la vérification sur la seule confiance |
+| Scan et photo simulés ne dégradent presque pas la lecture | Pas de prétraitement d'image en V1 ; à revoir avec de vraies photos |
+| Un seul vrai plan de tôlerie disponible | Scores à lire comme un plafond ; phase pilote avec validation humaine systématique |
+
+### 15.4 Organisation du code
+
+Le code de l'étude et celui de l'application vivent dans le même dépôt, mais dans des parties séparées, avec une dépendance **à sens unique** : l'étude utilise l'extraction de l'application (pour mesurer exactement ce qui sera livré), l'application n'importe jamais l'étude.
+
+| Partie | Contenu | Utilisé par |
+|---|---|---|
+| **Commun à l'application** | Format de la pièce (`schema`), accès aux modèles (`llm`), extraction (`extraction`) ; plus tard géométrie, faisabilité, chiffrage, interface | Application et étude |
+| **Étude** | Générateur de plans, dégradations, chargement des jeux, comparaison, synthèse (`evaluation`, `generateur`) ; adaptateur Claude Code (abonnement) | Étude seulement |
+
+Garder le même dépôt permet de relancer l'évaluation à chaque modification du prompt ou du format, sur la version exacte du code de l'application (test de non-régression).
 
 ---
 
@@ -580,12 +640,14 @@ En résumé :
 
 - [x] Langage : Python
 - [x] Interface : Streamlit
-- [x] Fournisseur IA pour le prototype : OpenRouter
+- [x] Modèle d'extraction : Claude Sonnet 5.5 par défaut ; Qwen3.8 27B hébergé en interne en repli (étude : [resultats.md](resultats.md))
+- [x] Contrôles de cohérence par le code après l'extraction, en plus des anomalies signalées par l'IA
 - [x] Modèle 3D dès la V1 (abandonné s'il s'avère trop coûteux à mettre au point)
-- [x] Évaluation : plans générés + jeux publics (cadsy, ecado), CADExpert en repli ([evaluation.md](evaluation.md))
+- [x] Évaluation : plans générés (propres, scan, photo, erronés, incohérents) + jeux publics (cadsy, ecado) ([evaluation.md](evaluation.md), [resultats.md](resultats.md))
 - [x] Gestion des utilisateurs et des rôles : hors périmètre
 
 **Ouvert**
 
-- [ ] Modèles exacts : disponibilité d'un modèle image sur Nous Research, modèles gratuits OpenRouter, quotas de l'abonnement Claude
-- [ ] Plans réels anonymisés fournis par l'entreprise (à demander)
+- [ ] Plans réels : aucun disponible en dehors de piece_003 ; à mesurer pendant une phase pilote
+- [ ] Contrat API et conditions de confidentialité avec le fournisseur retenu (Anthropic)
+- [ ] Hébergement interne de Qwen : matériel et coût à chiffrer si des clients refusent l'IA externe
