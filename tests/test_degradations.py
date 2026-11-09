@@ -38,3 +38,19 @@ def test_notation_erreurs():
     )
     assert evaluer_erreur(contradiction, incoherence)[1].champ == "erreur.cotes_contradictoires"
     assert evaluer_erreur(contradiction, incoherence)[1].statut == "signale"
+
+
+def test_notation_incoherence():
+    erreur = {"type": "traitement_incompatible"}
+    rien = PieceExtraite(
+        anomalies=[Anomalie(type="information_manquante", champ="traitement", description="—")]
+    )
+    vu = PieceExtraite(
+        anomalies=[
+            Anomalie(
+                type="incoherence", champ="traitement.type", description="anodisation sur acier"
+            )
+        ]
+    )
+    assert evaluer_erreur(erreur, rien)[0].statut == "non_signale"  # une absence ne compte pas
+    assert evaluer_erreur(erreur, vu)[0].statut == "signale"

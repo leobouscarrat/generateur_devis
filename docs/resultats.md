@@ -2,7 +2,7 @@
 
 Résultats obtenus avec le protocole décrit dans [evaluation.md](evaluation.md).
 
-> **État au 9 novembre 2026** : trois modèles évalués sur tous les jeux de test (cadsy, ecado, plans de tôlerie générés en PDF propre, scan et photo, plans volontairement erronés) : Claude Sonnet 5.5, Gemini 2.5 Flash et Qwen3.8 27B (open source).
+> **État au 9 novembre 2026** : trois modèles évalués sur tous les jeux de test (cadsy, ecado, plans de tôlerie générés en PDF propre, scan et photo, plans volontairement erronés) : Claude Sonnet 5.5, Gemini 2.5 Flash et Qwen3.8 27B (open source). Plans incohérents : Claude et Qwen.
 
 ---
 
@@ -14,7 +14,7 @@ Résultats obtenus avec le protocole décrit dans [evaluation.md](evaluation.md)
 | Prompt | v2 ([prompt.py](../src/generateur_devis/extraction/prompt.py)) |
 | Format de la pièce | 1.2 ([piece.py](../src/generateur_devis/schema/piece.py)) |
 | Images | Jeux publics : plans d'origine (niveau 1 : image propre, sans texte PDF). Jeu A : niveaux 0 (PDF propre), 2 (scan) et 3 (photo) |
-| Jeux de test | cadsy : 30 plans · ecado : 40 plans · tôlerie générée : 50 plans × 3 niveaux + 16 plans erronés (jamais utilisés pendant la mise au point) |
+| Jeux de test | cadsy : 30 plans · ecado : 40 plans · tôlerie générée : 50 plans × 3 niveaux + 16 plans erronés + 12 plans incohérents (jamais utilisés pendant la mise au point) |
 | Coût | Claude : ~3,40 $ en équivalent API pour les 70 plans publics, ~8,50 $ pour les 166 lectures du jeu A, pris sur les quotas de l'abonnement. Gemini : ~1,90 $ pour les 236 lectures (payé sur OpenRouter). Qwen : ~5,70 $ en équivalent (abonnement Nous) |
 | Durée | ~20 s par plan (Claude), ~10 s (Gemini), ~55 s (Qwen) |
 | Réponses valides | Claude 236 / 236 (8 appels photo relancés après une coupure de quota, sans effet sur le contenu) ; Gemini 232 / 236 ; Qwen 236 / 236 (2 relances après délai réseau) |
@@ -22,6 +22,8 @@ Résultats obtenus avec le protocole décrit dans [evaluation.md](evaluation.md)
 ---
 
 ## 2. Résultats sur les jeux de test
+
+Composition des jeux et exemples en image (niveaux de qualité, plans erronés et incohérents) : [jeux_de_test.md](jeux_de_test.md).
 
 ### ecado — 40 plans orientés devis (cartouche, matière, traitement, notes)
 
@@ -90,6 +92,22 @@ Aucune valeur inventée : la matière et l'épaisseur absentes sont laissées vi
 
 **Relecture manuelle des signalements** : le comptage automatique accepte toute anomalie qui touche le bon champ (ou, pour les contradictions, toute anomalie de type « incohérence »). Relus un par un, **15 signalements sur 16 désignent bien l'erreur** ; le seizième (test-e007) signale une incohérence, mais sur un autre point du plan. Le comptage automatique est donc légèrement optimiste ; les chiffres relus sont donnés dans la comparaison ci-dessous.
 
+### Plans incohérents — test, 12 plans
+
+Informations lisibles mais invraisemblables, qu'il faut repérer en croisant deux informations ou en connaissant le métier. Exemples en image dans [jeux_de_test.md](jeux_de_test.md#4-plans-incohérents).
+
+| Incohérence | Claude Sonnet 5.5 | Qwen3.8 27B |
+|---|---|---|
+| Quantité de trous fausse (« 6x Ø8,5 » mais 2 trous dessinés) | 4 / 4 | 3 / 4 |
+| Trou coté hors de la pièce (position 178 sur une plaque de 126) | 4 / 4 | 3 / 4 |
+| Traitement impossible (anodisation sur acier, galvanisation sur aluminium ou inox) | 4 / 4 | 1 / 4 |
+| **Total** (relu un par un) | **12 / 12** (IC 95 % : 76 – 100 %) | 7 / 12 |
+
+- Claude explique chaque problème : « La cote indique 6x Ø8.5 mais seuls 2 trous sont visibles », « l'anodisation ne s'applique pas à l'acier (réservée à l'aluminium) ».
+- Les deux modèles **recopient la quantité écrite** (6 trous) et non celle du dessin (2) : sans le signalement, le devis compterait 6 perçages. Le signalement est donc indispensable, pas un bonus.
+- Qwen voit les incohérences géométriques mais rarement les incohérences métier (traitement / matière).
+- Gemini 2.5 Flash n'a pas été évalué sur ce jeu (payant sur OpenRouter, ~0,10 $).
+
 ### Comparaison des modèles
 
 Mêmes jeux de test, même prompt v2, trois modèles :
@@ -142,7 +160,7 @@ Sur piece_003 (seul vrai plan de tôlerie, utilisé pour écrire le prompt) : to
 
 **Ce qui est fiable**
 - Sur les plans de tôlerie générés, **tout ce qui sert au devis** (matière, épaisseur, profil de pliage, trous, coins, composants, traitement) est lu à 96 – 100 %, y compris sur scan et photo.
-- Les **erreurs du plan** (information absente, cotes contradictoires) sont signalées dans 15 cas sur 16 (relecture manuelle), sans invention.
+- Les **erreurs du plan** (information absente, cotes contradictoires) sont signalées dans 15 cas sur 16 et les **incohérences** (quantité, position, traitement impossible) dans 12 cas sur 12 (relecture manuelle), sans invention.
 - Le **texte du plan** (cartouche, matière, traitement, notes, unités) est lu quasiment sans erreur.
 - Les **cotes** sont retrouvées à 97 – 98 %, sur des plans simples comme sur des plans CAO denses.
 - Les **valeurs** des tolérances géométriques et des états de surface sont toutes justes.
@@ -154,7 +172,8 @@ Sur piece_003 (seul vrai plan de tôlerie, utilisé pour écrire le prompt) : to
 - Sur photo, quelques **chiffres de cotes mal lus sans signalement** (2 profils sur 50) : la confiance annoncée ne suffit pas à les repérer.
 
 **Limites de ces chiffres**
-- Les plans de tôlerie sont **générés** : plus réguliers que de vrais plans (mise en page, polices, cotation complète, plis à 90° seulement). piece_003 reste le seul vrai plan de tôlerie testé. Les scores du jeu A sont donc un **plafond**, pas une prévision.
+- Les plans de tôlerie sont **générés** : plus réguliers que de vrais plans (mise en page, polices, cotation complète, plis à 90° seulement). **piece_003 est le seul vrai plan de tôlerie disponible** et aucun autre n'est accessible pour cet exercice. Les scores du jeu A sont donc un **plafond**, pas une prévision : la qualité réelle sera à mesurer sur les premiers plans clients, pendant une phase pilote où chaque extraction est validée par un humain.
+- Les pièces à 4 plis (5 plans) et les zones d'épargne (3 plans) sont peu nombreuses : les écarts sur ces cas sont nets mais mesurés sur peu de plans.
 - Scan et photo sont **simulés** : pas de pliure du papier, de reflet, d'annotation manuscrite ni de photo partielle.
 - Les jeux publics (cadsy, ecado) ne contiennent pas de plis ; ils mesurent surtout la lecture du texte et des cotes.
 - Précision des cotes cadsy (84 %) : la bonne réponse ignore les annotations composées (profondeurs de perçage, oblongs), que le modèle lit pourtant. Une partie des cotes « en trop » sont donc justes.
@@ -189,5 +208,5 @@ De même, l'annotation de piece_003 a été alignée sur les conventions v2 (not
 
 ## 6. Prochaines étapes
 
-1. **Vrais plans** : quelques plans de tôlerie réels annotés à la main (ou MechAtlas, voir [evaluation.md](evaluation.md)) pour vérifier l'écart avec les plans générés.
-2. **Contrôles par le code** dans l'outil : recalculer l'encombrement à partir du profil, vérifier la somme des ailes, pour attraper les cotes mal lues en photo.
+1. **Contrôles par le code** dans l'outil : recalculer l'encombrement à partir du profil, vérifier la somme des ailes, compter les trous, vérifier la compatibilité matière / traitement. Ils doublent les signalements de l'IA et attrapent les cotes mal lues en photo.
+2. **Phase pilote** : mesurer la qualité sur les premiers vrais plans clients, à partir des corrections faites dans le formulaire de validation.

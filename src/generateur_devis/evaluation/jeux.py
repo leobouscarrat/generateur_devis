@@ -18,7 +18,7 @@ import pyarrow.parquet as pq
 
 from generateur_devis.evaluation.degradations import degrader
 from generateur_devis.extraction.documents import Plan, charger_plan
-from generateur_devis.generateur.modele import ERREURS
+from generateur_devis.generateur.modele import ERREURS, INCOHERENCES
 from generateur_devis.llm.base import Image
 from generateur_devis.schema import (
     Champ,
@@ -371,6 +371,8 @@ CHAMPS_TOLERIE = [
 NOMBRES_TOLERIE = {"dev": 15, "test": 50}
 NOMBRES_ERREURS = {"dev": 8, "test": 16}
 CHAMPS_ERREURS = ["erreur"] + [f"erreur.{t}" for t in ERREURS]
+NOMBRES_INCOHERENCES = {"dev": 3, "test": 12}
+CHAMPS_INCOHERENCES = ["erreur"] + [f"erreur.{t}" for t in INCOHERENCES]
 
 
 def _plan_degrade(chemin_pdf: Path, niveau: int) -> Plan:
@@ -401,18 +403,44 @@ def charger_tolerie(partie: str, niveau: int = 0) -> Jeu:
     return Jeu(f"tolerie{_suffixe(niveau)}", CHAMPS_TOLERIE, echantillons)
 
 
+def _charger_erronees(nom: str, dossier: Path, motif: str, nombre: int, champs, niveau: int) -> Jeu:
+    echantillons = []
+    for verite_json in sorted(dossier.glob(motif))[:nombre]:
+        verite = PieceExtraite.model_validate_json(verite_json.read_text(encoding="utf-8"))
+        erreur = json.loads(verite_json.with_suffix(".erreur.json").read_text(encoding="utf-8"))
+        plan = _plan_degrade(verite_json.with_suffix(".pdf"), niveau)
+        echantillons.append(Echantillon(nom, verite_json.stem, plan, verite, erreur))
+    return Jeu(f"{nom}{_suffixe(niveau)}", champs, echantillons)
+
+
 def charger_tolerie_erreurs(partie: str, niveau: int = 0) -> Jeu:
     """Plans volontairement erronés : on mesure si l'IA signale l'erreur ou invente."""
     from generateur_devis.generateur import generer_jeu_erreurs
 
     dossier = generer_jeu_erreurs(partie, NOMBRES_ERREURS[partie])
-    echantillons = []
-    for verite_json in sorted(dossier.glob(f"{partie}-e???.json"))[: NOMBRES_ERREURS[partie]]:
-        verite = PieceExtraite.model_validate_json(verite_json.read_text(encoding="utf-8"))
-        erreur = json.loads(verite_json.with_suffix(".erreur.json").read_text(encoding="utf-8"))
-        plan = _plan_degrade(verite_json.with_suffix(".pdf"), niveau)
-        echantillons.append(Echantillon("tolerie_erreurs", verite_json.stem, plan, verite, erreur))
-    return Jeu(f"tolerie_erreurs{_suffixe(niveau)}", CHAMPS_ERREURS, echantillons)
+    return _charger_erronees(
+        "tolerie_erreurs",
+        dossier,
+        f"{partie}-e???.json",
+        NOMBRES_ERREURS[partie],
+        CHAMPS_ERREURS,
+        niveau,
+    )
+
+
+def charger_tolerie_incoherences(partie: str, niveau: int = 0) -> Jeu:
+    """Plans avec une information invraisemblable : l'IA la signale-t-elle ?"""
+    from generateur_devis.generateur import generer_jeu_incoherences
+
+    dossier = generer_jeu_incoherences(partie, NOMBRES_INCOHERENCES[partie])
+    return _charger_erronees(
+        "tolerie_incoherences",
+        dossier,
+        f"{partie}-i???.json",
+        NOMBRES_INCOHERENCES[partie],
+        CHAMPS_INCOHERENCES,
+        niveau,
+    )
 
 
 def charger_jeu(nom: str, partie: str = "dev", niveau: int = 0) -> Jeu:
@@ -426,4 +454,6 @@ def charger_jeu(nom: str, partie: str = "dev", niveau: int = 0) -> Jeu:
         return charger_tolerie(partie, niveau)
     if nom == "tolerie_erreurs":
         return charger_tolerie_erreurs(partie, niveau)
-    raise ValueError(f"Jeu inconnu : {nom} (cadsy, ecado, prive, tolerie, tolerie_erreurs)")
+    if nom == "tolerie_incoherences":
+        return charger_tolerie_incoherences(partie, niveau)
+    raise ValueError(f"Jeu inconnu : {nom}")

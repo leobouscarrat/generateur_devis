@@ -8,7 +8,7 @@ Usage :
 
 import argparse
 
-from generateur_devis.generateur import generer_jeu, generer_jeu_erreurs
+from generateur_devis.generateur import generer_jeu, generer_jeu_erreurs, generer_jeu_incoherences
 
 
 def main() -> None:
@@ -20,8 +20,17 @@ def main() -> None:
     parser.add_argument(
         "--erreurs", action="store_true", help="Plans volontairement erronés (niveau E)"
     )
+    parser.add_argument(
+        "--incoherences", action="store_true", help="Plans avec une information invraisemblable"
+    )
     args = parser.parse_args()
-    generer = generer_jeu_erreurs if args.erreurs else generer_jeu
+    generer = (
+        generer_jeu_erreurs
+        if args.erreurs
+        else generer_jeu_incoherences
+        if args.incoherences
+        else generer_jeu
+    )
     dossier = generer(args.partie, args.nombre)
     print(f"Plans écrits dans {dossier}")
 

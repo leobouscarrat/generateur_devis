@@ -412,14 +412,32 @@ ERREURS = {
 }
 
 
+INCOHERENCES = {
+    "quantite_trous_incoherente": "Rappel « Nx Ø… » qui annonce plus de trous que le dessin n'en montre",
+    "cote_hors_piece": "Cote de position d'un trou plus grande que la largeur de la pièce",
+    "traitement_incompatible": "Traitement impossible sur la matière (ex. anodisation sur acier)",
+}
+
+
+def _accepte(spec: SpecPiece, type_erreur: str) -> bool:
+    if type_erreur in ("cote_aile_absente", "cotes_contradictoires"):
+        return len(spec.ailes) >= 2  # erreurs de cotes : pièce pliée
+    if type_erreur in ("quantite_trous_incoherente", "cote_hors_piece"):
+        return bool(spec.trous)
+    if type_erreur == "traitement_incompatible":
+        return spec.matiere is not None
+    return True
+
+
 def tirer_piece_erronee(
     rng: random.Random, identifiant: str, type_erreur: str
 ) -> tuple[SpecPiece, Geometrie]:
-    """Tire une pièce puis y introduit une erreur de type `type_erreur`."""
+    """Tire une pièce puis y introduit une erreur de type `type_erreur` (ERREURS ou INCOHERENCES)."""
+    if type_erreur not in ERREURS and type_erreur not in INCOHERENCES:
+        raise ValueError(f"Erreur inconnue : {type_erreur}")
     while True:
         spec, geo = tirer_piece(rng, identifiant)
-        # Les erreurs de cotes demandent au moins deux ailes (une pièce pliée).
-        if type_erreur in ("matiere_absente", "epaisseur_absente") or len(spec.ailes) >= 2:
+        if _accepte(spec, type_erreur):
             break
     spec.erreur = type_erreur
     if type_erreur == "matiere_absente":
@@ -428,6 +446,23 @@ def tirer_piece_erronee(
         spec.erreur_detail = {"aile": rng.randrange(len(spec.ailes))}
     elif type_erreur == "cotes_contradictoires":
         spec.erreur_detail = {"ecart": rng.choice([-1, 1]) * rng.choice([5, 8, 10, 12, 15, 20])}
-    elif type_erreur != "epaisseur_absente":
-        raise ValueError(f"Erreur inconnue : {type_erreur}")
+    elif type_erreur == "quantite_trous_incoherente":
+        dessinee = spec.trous[0].quantite
+        spec.erreur_detail = {"dessinee": dessinee, "annoncee": dessinee + rng.choice([1, 2, 4])}
+    elif type_erreur == "cote_hors_piece":
+        spec.erreur_detail = {"position": _arrondi(spec.largeur + rng.uniform(10, 60), 1)}
+    elif type_erreur == "traitement_incompatible":
+        # Seulement des cas impossibles : anodisation (aluminium uniquement), galvanisation à
+        # chaud (acier uniquement). Le thermolaquage sur inox, par exemple, reste faisable.
+        incompatibles = [
+            t
+            for t in TRAITEMENTS
+            if t[2] in ("anodisation", "galvanisation") and spec.famille not in t[3]
+        ]
+        fr, en, type_traitement, _ = rng.choice(incompatibles)
+        spec.traitement = (spec.t(fr, en), type_traitement)
+        spec.traitement_dans_cartouche = True
+        spec.epargne = None
+        spec.notes = [n for n in spec.notes if n.categorie != "traitement"]
+        spec.erreur_detail = {"traitement": type_traitement, "famille": spec.famille}
     return spec, geo

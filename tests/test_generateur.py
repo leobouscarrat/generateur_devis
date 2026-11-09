@@ -1,5 +1,6 @@
 """Tests du générateur de plans de tôlerie."""
 
+import json
 import random
 
 import pymupdf
@@ -67,3 +68,16 @@ def test_plans_errones(tmp_path):
         if type_erreur in ("cote_aile_absente", "cotes_contradictoires"):
             assert len(verite.profil_pliage.elements) >= 3  # au moins un pli
         assert texte
+
+
+def test_plans_incoherents(tmp_path):
+    from generateur_devis.generateur.modele import INCOHERENCES
+
+    for i, type_erreur in enumerate(INCOHERENCES):
+        pdf = generer_piece(9, f"i{i}", tmp_path, type_erreur)
+        texte = pymupdf.open(pdf)[0].get_text()
+        erreur = json.loads(pdf.with_suffix(".erreur.json").read_text())
+        if type_erreur == "quantite_trous_incoherente":
+            assert f"{erreur['annoncee']}x" in texte
+        if type_erreur == "traitement_incompatible":
+            assert erreur["traitement"] in ("anodisation", "galvanisation")

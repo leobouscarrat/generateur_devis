@@ -190,12 +190,21 @@ def _vue_dessus(f: Feuille, geo: Geometrie, ox: float, oy: float, e: float) -> N
                 f.ligne(
                     [(P(x, y)[0], P(x, y)[1] - r), (P(x, y)[0], P(x, y)[1] + r)], TRAIT_FIN, "-."
                 )
+        premier = groupe is spec.trous[0]
         x0, y0 = groupe.xs[0], groupe.ys[0]
         f.cote(P(0, 0), P(x0, 0), -(8 + 7 * niveau), x0)
-        f.cote(P(0, 0), P(0, y0), 8 + 7 * niveau, y0)
+        valeur_y = (
+            spec.erreur_detail["position"] if premier and spec.erreur == "cote_hors_piece" else y0
+        )
+        f.cote(P(0, 0), P(0, y0), 8 + 7 * niveau, valeur_y)
         niveau += 1
         diametre = f.nombre(groupe.diametre)
-        texte = f"{groupe.quantite}x Ø{diametre}" if groupe.quantite > 1 else f"Ø{diametre}"
+        quantite = (
+            spec.erreur_detail["annoncee"]
+            if premier and spec.erreur == "quantite_trous_incoherente"
+            else groupe.quantite
+        )
+        texte = f"{quantite}x Ø{diametre}" if quantite > 1 else f"Ø{diametre}"
         if groupe.tolerance:
             texte += f" {groupe.tolerance}"
         xh, yh = groupe.xs[-1], groupe.ys[-1]
@@ -212,7 +221,7 @@ def _vue_dessus(f: Feuille, geo: Geometrie, ox: float, oy: float, e: float) -> N
             Cote(
                 valeur=groupe.diametre,
                 type="diametre",
-                quantite=groupe.quantite,
+                quantite=quantite,
                 tolerance=groupe.tolerance,
             ),
         )

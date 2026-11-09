@@ -7,7 +7,8 @@ Usage :
     uv run python -m generateur_devis.evaluation --jeu tolerie_erreurs      # plans erronés
 
 Jeux : cadsy, ecado, prive (plans annotés à la main dans data/prive/), tolerie (plans générés),
-tolerie_erreurs (plans générés volontairement erronés).
+tolerie_erreurs (plans générés volontairement erronés),
+tolerie_incoherences (plans générés avec une information invraisemblable).
 Niveaux (jeux tolerie) : 0 PDF propre, 1 image propre, 2 scan, 3 photo.
 """
 
@@ -24,7 +25,9 @@ def main() -> int:
         description=__doc__, formatter_class=argparse.RawTextHelpFormatter
     )
     parser.add_argument(
-        "--jeu", required=True, choices=["cadsy", "ecado", "prive", "tolerie", "tolerie_erreurs"]
+        "--jeu",
+        required=True,
+        choices=["cadsy", "ecado", "prive", "tolerie", "tolerie_erreurs", "tolerie_incoherences"],
     )
     parser.add_argument("--partie", default="dev", choices=["dev", "test"])
     parser.add_argument("--niveau", type=int, default=0, choices=[0, 1, 2, 3])

@@ -5,7 +5,12 @@ import random
 from pathlib import Path
 
 from generateur_devis.generateur.dessin import dessiner
-from generateur_devis.generateur.modele import ERREURS, tirer_piece, tirer_piece_erronee
+from generateur_devis.generateur.modele import (
+    ERREURS,
+    INCOHERENCES,
+    tirer_piece,
+    tirer_piece_erronee,
+)
 from generateur_devis.generateur.verite import verite
 
 RACINE = Path(__file__).resolve().parents[3]
@@ -13,6 +18,8 @@ DOSSIER_GENERE = RACINE / "data" / "generated" / "tolerie"
 DOSSIER_ERREURS = RACINE / "data" / "generated" / "tolerie_erreurs"
 GRAINES = {"dev": 1001, "test": 2002}
 GRAINES_ERREURS = {"dev": 3003, "test": 4004}
+DOSSIER_INCOHERENCES = RACINE / "data" / "generated" / "tolerie_incoherences"
+GRAINES_INCOHERENCES = {"dev": 5005, "test": 6006}
 
 
 def generer_piece(graine: int, identifiant: str, dossier: Path, erreur: str | None = None) -> Path:
@@ -52,13 +59,36 @@ def generer_jeu(partie: str, nombre: int, dossier: Path | None = None) -> Path:
     return dossier
 
 
+def _generer_erronees(
+    partie: str, nombre: int, dossier: Path, graine: int, types: list[str], prefixe: str
+) -> Path:
+    dossier.mkdir(parents=True, exist_ok=True)
+    for i in range(nombre):
+        identifiant = f"{partie}-{prefixe}{i:03d}"
+        if not (dossier / f"{identifiant}.json").exists():
+            generer_piece(graine, identifiant, dossier, types[i % len(types)])
+    return dossier
+
+
 def generer_jeu_erreurs(partie: str, nombre: int, dossier: Path | None = None) -> Path:
     """Plans volontairement erronés (niveau E) : les types d'erreur sont répartis à tour de rôle."""
-    dossier = dossier or DOSSIER_ERREURS / partie
-    dossier.mkdir(parents=True, exist_ok=True)
-    types = list(ERREURS)
-    for i in range(nombre):
-        identifiant = f"{partie}-e{i:03d}"
-        if not (dossier / f"{identifiant}.json").exists():
-            generer_piece(GRAINES_ERREURS[partie], identifiant, dossier, types[i % len(types)])
-    return dossier
+    return _generer_erronees(
+        partie,
+        nombre,
+        dossier or DOSSIER_ERREURS / partie,
+        GRAINES_ERREURS[partie],
+        list(ERREURS),
+        "e",
+    )
+
+
+def generer_jeu_incoherences(partie: str, nombre: int, dossier: Path | None = None) -> Path:
+    """Plans avec une information invraisemblable (quantité, position, traitement)."""
+    return _generer_erronees(
+        partie,
+        nombre,
+        dossier or DOSSIER_INCOHERENCES / partie,
+        GRAINES_INCOHERENCES[partie],
+        list(INCOHERENCES),
+        "i",
+    )

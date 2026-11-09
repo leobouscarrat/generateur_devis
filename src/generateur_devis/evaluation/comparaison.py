@@ -271,6 +271,22 @@ _INDICES_ERREUR: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
 }
 
 
+_INDICES_INCOHERENCE: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
+    "quantite_trous_incoherente": (
+        ("contours.trous", "cotes"),
+        ("TROU", "HOLE", "QUANTITE", "QUANTITY", "PERCAGE"),
+    ),
+    "cote_hors_piece": (
+        ("contours.trous", "cotes"),
+        ("TROU", "HOLE", "HORS", "OUTSIDE", "DEPASSE", "POSITION", "LARGEUR", "WIDTH"),
+    ),
+    "traitement_incompatible": (
+        ("traitement", "matiere"),
+        ("TRAITEMENT", "FINISH", "ANODIS", "GALVA", "ZING", "PASSIV", "CATAPHOR", "COMPATIB"),
+    ),
+}
+
+
 def _anomalie_sur(piece: PieceExtraite, prefixes: tuple[str, ...], mots: tuple[str, ...]) -> bool:
     for a in piece.anomalies:
         if a.champ and a.champ.startswith(prefixes):
@@ -286,7 +302,14 @@ def evaluer_erreur(erreur: dict, extraction: PieceExtraite) -> list[ResultatCham
     Renvoie deux lignes : « erreur » (tous types confondus) et « erreur.<type> ».
     """
     type_erreur = erreur["type"]
-    if type_erreur == "cotes_contradictoires":
+    if type_erreur in _INDICES_INCOHERENCE:
+        # Information invraisemblable : il faut une anomalie (incohérence ou autre) qui en parle.
+        prefixes, mots = _INDICES_INCOHERENCE[type_erreur]
+        anomalies = [a for a in extraction.anomalies if a.type in ("incoherence", "autre")]
+        piece = extraction.model_copy(update={"anomalies": anomalies})
+        statut = "signale" if _anomalie_sur(piece, prefixes, mots) else "non_signale"
+        lu = None
+    elif type_erreur == "cotes_contradictoires":
         incoherence = any(a.type == "incoherence" for a in extraction.anomalies)
         statut = "signale" if incoherence else "non_signale"
         lu = None
