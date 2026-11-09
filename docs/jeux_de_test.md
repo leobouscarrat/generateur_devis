@@ -98,11 +98,11 @@ L'IA doit **signaler** le problème au lieu d'inventer une valeur.
 
 ![Épaisseur absente](images/erreur_epaisseur_absente.jpg)
 
-**Cote d'aile manquante** : la petite aile droite du U n'est pas cotée et aucune cote d'encombrement ne permet de la retrouver. Un modèle qui mesure le dessin à l'échelle invente une valeur.
+**Cote d'aile manquante** : sur cette équerre en L, seule l'aile verticale est cotée (97,5) ; l'aile horizontale n'a pas de cote et aucune cote d'encombrement ne permet de la retrouver (la vue de dessus ne donne que la largeur 46 et la position du trou). Un modèle qui mesure le dessin à l'échelle invente une valeur.
 
 ![Cote d'aile manquante](images/erreur_cote_aile_absente.jpg)
 
-**Cotes contradictoires** : 107,25 et 112,25 sur la même longueur.
+**Cotes contradictoires** : l'aile horizontale du L est cotée 120,5 et, juste en dessous, la longueur hors-tout est cotée 140,5 entre les mêmes lignes d'attache. La pièce ne peut pas mesurer les deux.
 
 ![Cotes contradictoires](images/erreur_cotes_contradictoires.jpg)
 

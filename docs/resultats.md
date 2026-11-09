@@ -88,7 +88,7 @@ IC 95 % : 93 – 100 % pour un champ à 100 % sur 50 plans ; 81 – 97 % pour 92
 | Cotes contradictoires (encombrement ≠ somme des ailes, écart de 5 à 20 mm) | 4 / 4 |
 | **Total** | **16 / 16** (IC 95 % : 81 – 100 %) |
 
-Aucune valeur inventée : la matière et l'épaisseur absentes sont laissées vides avec une anomalie ; la longueur d'aile manquante n'est pas mesurée sur le dessin ; les contradictions sont décrites avec les deux valeurs (ex. « 107,25 et 112,25 tracées sur la même étendue »).
+Aucune valeur inventée : la matière et l'épaisseur absentes sont laissées vides avec une anomalie ; la longueur d'aile manquante n'est pas mesurée sur le dessin ; les contradictions sont décrites avec les deux valeurs (ex. « Les cotes 120,5 et 140,5 couvrent la même étendue sur la vue de côté (même origine, même extrémité) mais ont des valeurs différentes »).
 
 **Relecture manuelle des signalements** : le comptage automatique accepte toute anomalie qui touche le bon champ (ou, pour les contradictions, toute anomalie de type « incohérence »). Relus un par un, **15 signalements sur 16 désignent bien l'erreur** ; le seizième (test-e007) signale une incohérence, mais sur un autre point du plan. Le comptage automatique est donc légèrement optimiste ; les chiffres relus sont donnés dans la comparaison ci-dessous.
 
