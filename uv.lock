@@ -208,12 +208,9 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "httpx" },
-    { name = "matplotlib" },
-    { name = "pyarrow" },
     { name = "pydantic" },
     { name = "pymupdf" },
     { name = "python-dotenv" },
-    { name = "shapely" },
 ]
 
 [package.dev-dependencies]
@@ -221,22 +218,33 @@ dev = [
     { name = "pytest" },
     { name = "ruff" },
 ]
+etude = [
+    { name = "matplotlib" },
+    { name = "numpy" },
+    { name = "pillow" },
+    { name = "pyarrow" },
+    { name = "shapely" },
+]
 
 [package.metadata]
 requires-dist = [
     { name = "httpx", specifier = ">=0.28.1" },
-    { name = "matplotlib", specifier = ">=3.11.2" },
-    { name = "pyarrow", specifier = ">=26.0.1" },
     { name = "pydantic", specifier = ">=2.7" },
     { name = "pymupdf", specifier = ">=2.1" },
     { name = "python-dotenv", specifier = ">=1.2.4" },
-    { name = "shapely", specifier = ">=2.2.0" },
 ]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "pytest", specifier = ">=8" },
     { name = "ruff", specifier = ">=0.6" },
+]
+etude = [
+    { name = "matplotlib", specifier = ">=3.11.2" },
+    { name = "numpy", specifier = ">=2" },
+    { name = "pillow", specifier = ">=11" },
+    { name = "pyarrow", specifier = ">=26.0.1" },
+    { name = "shapely", specifier = ">=2.2.0" },
 ]
 
 [[package]]

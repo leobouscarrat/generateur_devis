@@ -14,7 +14,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 from matplotlib.patches import Circle, Polygon, Rectangle  # noqa: E402
 
-from generateur_devis.generateur.modele import (  # noqa: E402
+from etude_extraction.generateur.modele import (  # noqa: E402
     COMPOSANTS,
     Geometrie,
     SpecPiece,

@@ -174,7 +174,7 @@ Pour limiter le nombre d'appels, on garde **trois niveaux** sur le jeu A, plus l
 
 Le niveau 1 (image d'un PDF propre, sans texte lisible) est l'état d'origine des jeux B, C et D : il est donc couvert sans appel supplémentaire. Il reste disponible sur le jeu A (`--niveau 1`) pour séparer l'effet du texte PDF de celui de la qualité d'image.
 
-Les dégradations sont reproductibles (tirage selon l'identifiant du plan) et gardées sur disque (`data/generated/tolerie/<partie>/niveau<N>/`) pour pouvoir les consulter. Code : [degradations.py](../src/generateur_devis/evaluation/degradations.py).
+Les dégradations sont reproductibles (tirage selon l'identifiant du plan) et gardées sur disque (`data/generated/tolerie/<partie>/niveau<N>/`) pour pouvoir les consulter. Code : [degradations.py](../src/etude_extraction/degradations.py).
 
 ### Plans erronés (niveau E)
 

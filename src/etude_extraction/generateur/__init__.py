@@ -4,14 +4,14 @@ import json
 import random
 from pathlib import Path
 
-from generateur_devis.generateur.dessin import dessiner
-from generateur_devis.generateur.modele import (
+from etude_extraction.generateur.dessin import dessiner
+from etude_extraction.generateur.modele import (
     ERREURS,
     INCOHERENCES,
     tirer_piece,
     tirer_piece_erronee,
 )
-from generateur_devis.generateur.verite import verite
+from etude_extraction.generateur.verite import verite
 
 RACINE = Path(__file__).resolve().parents[3]
 DOSSIER_GENERE = RACINE / "data" / "generated" / "tolerie"

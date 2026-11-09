@@ -1,9 +1,9 @@
 """Tests des dégradations (scan, photo) et de la notation des plans erronés."""
 
-from generateur_devis.evaluation.comparaison import evaluer_erreur
-from generateur_devis.evaluation.degradations import degrader
+from etude_extraction.comparaison import evaluer_erreur
+from etude_extraction.degradations import degrader
+from etude_extraction.generateur import generer_piece
 from generateur_devis.extraction.documents import charger_plan
-from generateur_devis.generateur import generer_piece
 from generateur_devis.schema import Anomalie, Champ, PieceExtraite
 
 

@@ -55,7 +55,8 @@ L'IA sert à **lire et comprendre le plan**. Elle ne calcule **ni la géométrie
 Prérequis : [uv](https://docs.astral.sh/uv/) et Python 3.12 ou plus.
 
 ```bash
-uv sync                                          # installe les dépendances
+uv sync                                          # installe l'application et l'étude
+uv sync --no-group etude                         # application seule (sans les dépendances de l'étude)
 cp .env.example .env                             # puis renseigner les clés d'API
 uv run pytest                                    # lance les tests
 uv run python -m generateur_devis.schema.export  # régénère le JSON Schema de la pièce
@@ -70,15 +71,15 @@ uv run python -m generateur_devis.extraction PLAN.pdf --modele claude-code:sonne
 uv run python -m generateur_devis.extraction PLAN.pdf --modele openrouter:<modèle> --sortie fiche.json
 ```
 
-Les réponses sont mises en cache dans `results/cache/` : un même plan n'est jamais redemandé au même modèle.
+Pendant l'étude, les réponses sont mises en cache dans `results/cache/` : un même plan n'est jamais redemandé au même modèle. L'application, elle, ne garde aucune réponse sur disque.
 
 Évaluer un modèle sur un jeu (cadsy, ecado, prive, tolerie, tolerie_erreurs ou tolerie_incoherences), partie développement ou test :
 
 ```bash
-uv run python -m generateur_devis.evaluation --jeu ecado --partie dev --modele claude-code:sonnet
-uv run python -m generateur_devis.evaluation --jeu tolerie --niveau 3 --partie test   # photos
-uv run python -m generateur_devis.evaluation --jeu tolerie_erreurs --partie test      # plans erronés
-uv run python -m generateur_devis.evaluation --jeu tolerie_incoherences --partie test # plans incohérents
+uv run python -m etude_extraction --jeu ecado --partie dev --modele claude-code:sonnet
+uv run python -m etude_extraction --jeu tolerie --niveau 3 --partie test   # photos
+uv run python -m etude_extraction --jeu tolerie_erreurs --partie test      # plans erronés
+uv run python -m etude_extraction --jeu tolerie_incoherences --partie test # plans incohérents
 ```
 
 Niveaux du jeu tôlerie : 0 PDF propre, 1 image propre, 2 scan, 3 photo.
@@ -98,12 +99,15 @@ Les jeux publics sont téléchargés automatiquement dans `data/raw/`. Les résu
 │   ├── evaluation.md            # Protocole d'évaluation de l'extraction
 │   ├── resultats.md             # Résultats de l'évaluation
 │   └── jeux_de_test.md          # Composition des jeux de test, exemples en image (docs/images/)
-├── src/generateur_devis/
+├── src/generateur_devis/         # APPLICATION
 │   ├── schema/                  # Format JSON de la pièce (Pydantic), partagé par tout le projet
 │   ├── llm/                     # Accès aux modèles : Claude Code, OpenRouter, Nous Research
-│   ├── extraction/              # Plan → images + texte, prompt, validation, cache
+│   └── extraction/              # Plan → images + texte, prompt, validation
+├── src/etude_extraction/        # ÉTUDE de la qualité de l'extraction (n'est jamais importée par l'application)
 │   ├── generateur/              # Générateur de plans de tôlerie avec leur bonne réponse
-│   └── evaluation/              # Jeux (cadsy, ecado, privé, tôlerie), comparaison champ par champ, synthèse
+│   ├── degradations.py          # Scan et photo simulés
+│   ├── jeux.py                  # Jeux (cadsy, ecado, privé, tôlerie, erronés, incohérents)
+│   └── comparaison.py, executer.py  # Comparaison champ par champ, synthèse, cache des réponses
 ├── schemas/
 │   └── piece_extraite.schema.json  # Export JSON Schema du format (généré)
 ├── exemples/
@@ -121,7 +125,7 @@ Le projet est découpé en deux parties.
 
 - [x] Protocole d'évaluation
 - [x] Format de sortie : schéma JSON de la pièce ([src/generateur_devis/schema/piece.py](src/generateur_devis/schema/piece.py))
-- [x] Générateur de plans de tôlerie et mise en plan (`uv run python -m generateur_devis.generateur`)
+- [x] Générateur de plans de tôlerie et mise en plan (`uv run python -m etude_extraction.generateur`)
 - [x] Accès aux modèles et extraction de bout en bout (premier essai sur piece_003)
 - [x] Dégradations (scan, photo) et plans volontairement erronés
 - [x] Chargement de cadsy et ecado, comparaison champ par champ, premiers résultats (développement)

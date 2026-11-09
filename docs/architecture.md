@@ -627,8 +627,12 @@ Le code de l'étude et celui de l'application vivent dans le même dépôt, mais
 
 | Partie | Contenu | Utilisé par |
 |---|---|---|
-| **Commun à l'application** | Format de la pièce (`schema`), accès aux modèles (`llm`), extraction (`extraction`) ; plus tard géométrie, faisabilité, chiffrage, interface | Application et étude |
-| **Étude** | Générateur de plans, dégradations, chargement des jeux, comparaison, synthèse (`evaluation`, `generateur`) ; adaptateur Claude Code (abonnement) | Étude seulement |
+| **Application** — `src/generateur_devis/` | Format de la pièce (`schema`), accès aux modèles (`llm`), extraction (`extraction`) ; plus tard géométrie, faisabilité, chiffrage, interface | Application et étude |
+| **Étude** — `src/etude_extraction/` | Générateur de plans, dégradations, chargement des jeux, comparaison, synthèse, cache des réponses | Étude seulement |
+
+- Les **dépendances** sont séparées : celles de l'étude (matplotlib, pyarrow, shapely…) sont dans un groupe `etude` du `pyproject.toml` ; l'application s'installe et fonctionne sans elles.
+- Le **cache des réponses** (`results/cache/`) appartient à l'étude : l'extraction de l'application ne garde aucune réponse sur disque par défaut, conformément aux règles de conservation ([section 11](#11-traçabilité-et-confidentialité)).
+- L'adaptateur **Claude Code** (abonnement) reste dans `llm`, mais ne sert qu'à l'étude ([9.2](#92-adaptateur-de-fournisseur)).
 
 Garder le même dépôt permet de relancer l'évaluation à chaque modification du prompt ou du format, sur la version exacte du code de l'application (test de non-régression).
 

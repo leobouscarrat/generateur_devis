@@ -1,5 +1,5 @@
-from generateur_devis.evaluation.comparaison import comparer, normaliser
-from generateur_devis.evaluation.executer import intervalle_wilson
+from etude_extraction.comparaison import comparer, normaliser
+from etude_extraction.executer import intervalle_wilson
 from generateur_devis.schema import (
     Aile,
     Anomalie,

@@ -24,8 +24,6 @@ from generateur_devis.extraction.prompt import (
 from generateur_devis.llm.base import ErreurModele, ModeleVision, ReponseModele
 from generateur_devis.schema import VERSION_SCHEMA, PieceExtraite
 
-DOSSIER_CACHE = Path(__file__).resolve().parents[3] / "results" / "cache"
-
 
 @dataclass
 class ResultatExtraction:
@@ -105,7 +103,7 @@ def extraire(
     plan: Plan,
     modele: ModeleVision,
     tentatives: int = 2,
-    dossier_cache: Path | None = DOSSIER_CACHE,
+    dossier_cache: Path | None = None,
 ) -> ResultatExtraction:
     chemin_cache = None
     if dossier_cache is not None:

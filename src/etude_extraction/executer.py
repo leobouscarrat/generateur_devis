@@ -8,13 +8,16 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-from generateur_devis.evaluation.comparaison import ResultatChamp, comparer, evaluer_erreur
-from generateur_devis.evaluation.jeux import Echantillon, Jeu
+from etude_extraction.comparaison import ResultatChamp, comparer, evaluer_erreur
+from etude_extraction.jeux import Echantillon, Jeu
 from generateur_devis.extraction import VERSION_PROMPT, extraire
 from generateur_devis.extraction.extracteur import ResultatExtraction
 from generateur_devis.llm.base import ModeleVision
 
-DOSSIER_RUNS = Path(__file__).resolve().parents[3] / "results" / "runs"
+DOSSIER_RESULTATS = Path(__file__).resolve().parents[2] / "results"
+DOSSIER_RUNS = DOSSIER_RESULTATS / "runs"
+DOSSIER_CACHE = DOSSIER_RESULTATS / "cache"
+"""Réponses des modèles, réutilisées d'une évaluation à l'autre (jamais redemandées)."""
 STATUTS_ACCEPTABLES = {"juste", "absent_ok", "deduit_signale", "signale", "abstention"}
 
 
@@ -28,7 +31,7 @@ class ResultatEchantillon:
 def evaluer_echantillon(
     echantillon: Echantillon, modele: ModeleVision, champs: list[str]
 ) -> ResultatEchantillon:
-    extraction = extraire(echantillon.plan, modele)
+    extraction = extraire(echantillon.plan, modele, dossier_cache=DOSSIER_CACHE)
     resultat = ResultatEchantillon(echantillon.identifiant, extraction)
     if extraction.piece is not None:
         ordinaires = [c for c in champs if not c.startswith("erreur")]

@@ -1,10 +1,10 @@
 """Lancer une évaluation.
 
 Usage :
-    uv run python -m generateur_devis.evaluation --jeu ecado --partie dev --modele claude-code:sonnet
-    uv run python -m generateur_devis.evaluation --jeu cadsy --partie test --limite 10
-    uv run python -m generateur_devis.evaluation --jeu tolerie --niveau 3   # photos
-    uv run python -m generateur_devis.evaluation --jeu tolerie_erreurs      # plans erronés
+    uv run python -m etude_extraction --jeu ecado --partie dev --modele claude-code:sonnet
+    uv run python -m etude_extraction --jeu cadsy --partie test --limite 10
+    uv run python -m etude_extraction --jeu tolerie --niveau 3   # photos
+    uv run python -m etude_extraction --jeu tolerie_erreurs      # plans erronés
 
 Jeux : cadsy, ecado, prive (plans annotés à la main dans data/prive/), tolerie (plans générés),
 tolerie_erreurs (plans générés volontairement erronés),
@@ -15,8 +15,8 @@ Niveaux (jeux tolerie) : 0 PDF propre, 1 image propre, 2 scan, 3 photo.
 import argparse
 import sys
 
-from generateur_devis.evaluation.executer import executer, tableau
-from generateur_devis.evaluation.jeux import charger_jeu
+from etude_extraction.executer import executer, tableau
+from etude_extraction.jeux import charger_jeu
 from generateur_devis.llm import creer_modele
 
 

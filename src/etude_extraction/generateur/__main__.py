@@ -1,14 +1,14 @@
 """Générer des plans de tôlerie.
 
 Usage :
-    uv run python -m generateur_devis.generateur --partie dev --nombre 15
-    uv run python -m generateur_devis.generateur --partie test --nombre 50
-    uv run python -m generateur_devis.generateur --partie dev --nombre 8 --erreurs
+    uv run python -m etude_extraction.generateur --partie dev --nombre 15
+    uv run python -m etude_extraction.generateur --partie test --nombre 50
+    uv run python -m etude_extraction.generateur --partie dev --nombre 8 --erreurs
 """
 
 import argparse
 
-from generateur_devis.generateur import generer_jeu, generer_jeu_erreurs, generer_jeu_incoherences
+from etude_extraction.generateur import generer_jeu, generer_jeu_erreurs, generer_jeu_incoherences
 
 
 def main() -> None:

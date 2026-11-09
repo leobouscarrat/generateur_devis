@@ -16,9 +16,9 @@ from pathlib import Path
 import httpx
 import pyarrow.parquet as pq
 
-from generateur_devis.evaluation.degradations import degrader
+from etude_extraction.degradations import degrader
+from etude_extraction.generateur.modele import ERREURS, INCOHERENCES
 from generateur_devis.extraction.documents import Plan, charger_plan
-from generateur_devis.generateur.modele import ERREURS, INCOHERENCES
 from generateur_devis.llm.base import Image
 from generateur_devis.schema import (
     Champ,
@@ -34,7 +34,7 @@ from generateur_devis.schema import (
     Traitement,
 )
 
-RACINE = Path(__file__).resolve().parents[3]
+RACINE = Path(__file__).resolve().parents[2]
 DOSSIER_RAW = RACINE / "data" / "raw"
 GRAINE = 2026
 
@@ -328,7 +328,7 @@ DOSSIER_PRIVE = RACINE / "data" / "prive"
 
 def charger_prive() -> Jeu:
     """Plans de data/prive/plans/ ou exercise_information/, annotés dans data/prive/annotations/."""
-    from generateur_devis.evaluation.comparaison import CHAMPS
+    from etude_extraction.comparaison import CHAMPS
 
     echantillons = []
     for annotation in sorted((DOSSIER_PRIVE / "annotations").glob("*.json")):
@@ -392,7 +392,7 @@ def _suffixe(niveau: int) -> str:
 
 
 def charger_tolerie(partie: str, niveau: int = 0) -> Jeu:
-    from generateur_devis.generateur import generer_jeu
+    from etude_extraction.generateur import generer_jeu
 
     dossier = generer_jeu(partie, NOMBRES_TOLERIE[partie])
     echantillons = []
@@ -415,7 +415,7 @@ def _charger_erronees(nom: str, dossier: Path, motif: str, nombre: int, champs, 
 
 def charger_tolerie_erreurs(partie: str, niveau: int = 0) -> Jeu:
     """Plans volontairement erronés : on mesure si l'IA signale l'erreur ou invente."""
-    from generateur_devis.generateur import generer_jeu_erreurs
+    from etude_extraction.generateur import generer_jeu_erreurs
 
     dossier = generer_jeu_erreurs(partie, NOMBRES_ERREURS[partie])
     return _charger_erronees(
@@ -430,7 +430,7 @@ def charger_tolerie_erreurs(partie: str, niveau: int = 0) -> Jeu:
 
 def charger_tolerie_incoherences(partie: str, niveau: int = 0) -> Jeu:
     """Plans avec une information invraisemblable : l'IA la signale-t-elle ?"""
-    from generateur_devis.generateur import generer_jeu_incoherences
+    from etude_extraction.generateur import generer_jeu_incoherences
 
     dossier = generer_jeu_incoherences(partie, NOMBRES_INCOHERENCES[partie])
     return _charger_erronees(

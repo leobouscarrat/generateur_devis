@@ -64,7 +64,7 @@ Chaque plan est lu trois fois : PDF propre, scan, photo (150 lectures).
 
 ## 2. Niveaux de qualité
 
-Le même plan (test-021, chapeau à 4 plis) aux trois niveaux. Les dégradations sont simulées par [degradations.py](../src/generateur_devis/evaluation/degradations.py).
+Le même plan (test-021, chapeau à 4 plis) aux trois niveaux. Les dégradations sont simulées par [degradations.py](../src/etude_extraction/degradations.py).
 
 **PDF propre** : image + texte du PDF fournis au modèle.
 

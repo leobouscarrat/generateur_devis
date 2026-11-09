@@ -5,9 +5,9 @@ import random
 
 import pymupdf
 
-from generateur_devis.evaluation.comparaison import comparer
-from generateur_devis.generateur import generer_piece
-from generateur_devis.generateur.modele import FORMES, geometrie, tirer_piece
+from etude_extraction.comparaison import comparer
+from etude_extraction.generateur import generer_piece
+from etude_extraction.generateur.modele import FORMES, geometrie, tirer_piece
 from generateur_devis.schema import PieceExtraite
 
 
@@ -55,7 +55,7 @@ def test_plan_et_bonne_reponse(tmp_path):
 
 
 def test_plans_errones(tmp_path):
-    from generateur_devis.generateur.modele import ERREURS
+    from etude_extraction.generateur.modele import ERREURS
 
     for i, type_erreur in enumerate(ERREURS):
         pdf = generer_piece(7, f"e{i}", tmp_path, type_erreur)
@@ -71,7 +71,7 @@ def test_plans_errones(tmp_path):
 
 
 def test_plans_incoherents(tmp_path):
-    from generateur_devis.generateur.modele import INCOHERENCES
+    from etude_extraction.generateur.modele import INCOHERENCES
 
     for i, type_erreur in enumerate(INCOHERENCES):
         pdf = generer_piece(9, f"i{i}", tmp_path, type_erreur)

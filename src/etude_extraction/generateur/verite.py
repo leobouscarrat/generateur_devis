@@ -1,6 +1,6 @@
 """Bonne réponse d'une pièce générée, au format de la pièce."""
 
-from generateur_devis.generateur.modele import (
+from etude_extraction.generateur.modele import (
     COMPOSANTS,
     Geometrie,
     SpecPiece,
