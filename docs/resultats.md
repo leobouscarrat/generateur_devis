@@ -2,7 +2,7 @@
 
 Résultats obtenus avec le protocole décrit dans [evaluation.md](evaluation.md).
 
-> **État au 8 novembre 2026** : Claude Sonnet 5.5 (abonnement Claude) et Gemini 2.5 Flash (OpenRouter) évalués sur tous les jeux de test : cadsy, ecado, plans de tôlerie générés (jeu A) en PDF propre, scan et photo, et plans volontairement erronés. Un modèle open source reste à tester.
+> **État au 9 novembre 2026** : trois modèles évalués sur tous les jeux de test (cadsy, ecado, plans de tôlerie générés en PDF propre, scan et photo, plans volontairement erronés) : Claude Sonnet 5.5, Gemini 2.5 Flash et Qwen3.8 27B (open source).
 
 ---
 
@@ -10,14 +10,14 @@ Résultats obtenus avec le protocole décrit dans [evaluation.md](evaluation.md)
 
 | Élément | Valeur |
 |---|---|
-| Modèles | Claude Sonnet 5.5 (`claude-code:sonnet`, abonnement Claude) ; Gemini 2.5 Flash (`openrouter:google/gemini-2.5-flash`, comparaison) |
+| Modèles | Claude Sonnet 5.5 (`claude-code:sonnet`, abonnement Claude) ; comparaison : Gemini 2.5 Flash (`openrouter:google/gemini-2.5-flash`) et Qwen3.8 27B (`nous:qwen/qwen3.8-27b`, abonnement Nous Research) |
 | Prompt | v2 ([prompt.py](../src/generateur_devis/extraction/prompt.py)) |
 | Format de la pièce | 1.2 ([piece.py](../src/generateur_devis/schema/piece.py)) |
 | Images | Jeux publics : plans d'origine (niveau 1 : image propre, sans texte PDF). Jeu A : niveaux 0 (PDF propre), 2 (scan) et 3 (photo) |
 | Jeux de test | cadsy : 30 plans · ecado : 40 plans · tôlerie générée : 50 plans × 3 niveaux + 16 plans erronés (jamais utilisés pendant la mise au point) |
-| Coût | Claude : ~3,40 $ en équivalent API pour les 70 plans publics, ~8,50 $ pour les 166 lectures du jeu A, pris sur les quotas de l'abonnement. Gemini : ~1,90 $ pour les 236 lectures (payé sur OpenRouter) |
-| Durée | ~20 s par plan (Claude), ~10 s (Gemini) |
-| Réponses valides | Claude 236 / 236 (8 appels photo relancés après une coupure de quota, sans effet sur le contenu) ; Gemini 232 / 236 |
+| Coût | Claude : ~3,40 $ en équivalent API pour les 70 plans publics, ~8,50 $ pour les 166 lectures du jeu A, pris sur les quotas de l'abonnement. Gemini : ~1,90 $ pour les 236 lectures (payé sur OpenRouter). Qwen : ~5,70 $ en équivalent (abonnement Nous) |
+| Durée | ~20 s par plan (Claude), ~10 s (Gemini), ~55 s (Qwen) |
+| Réponses valides | Claude 236 / 236 (8 appels photo relancés après une coupure de quota, sans effet sur le contenu) ; Gemini 232 / 236 ; Qwen 236 / 236 (2 relances après délai réseau) |
 
 ---
 
@@ -78,7 +78,7 @@ IC 95 % : 93 – 100 % pour un champ à 100 % sur 50 plans ; 81 – 97 % pour 92
 
 ### Plans volontairement erronés (niveau E) — test, 16 plans
 
-| Erreur introduite | Signalée par l'IA |
+| Erreur introduite | Signalée par l'IA (comptage automatique) |
 |---|---|
 | Matière absente (« — » dans le cartouche) | 4 / 4 |
 | Épaisseur absente (« — » dans le cartouche) | 4 / 4 |
@@ -86,37 +86,47 @@ IC 95 % : 93 – 100 % pour un champ à 100 % sur 50 plans ; 81 – 97 % pour 92
 | Cotes contradictoires (encombrement ≠ somme des ailes, écart de 5 à 20 mm) | 4 / 4 |
 | **Total** | **16 / 16** (IC 95 % : 81 – 100 %) |
 
-Aucune valeur inventée : la matière et l'épaisseur absentes sont laissées vides avec une anomalie ; la longueur d'aile manquante n'est pas mesurée sur le dessin ; les contradictions sont décrites avec les deux valeurs (ex. « 107,25 et 112,25 tracées sur la même étendue »). Les signalements ont été relus un par un : la détection par mots-clés ne les surestime pas.
+Aucune valeur inventée : la matière et l'épaisseur absentes sont laissées vides avec une anomalie ; la longueur d'aile manquante n'est pas mesurée sur le dessin ; les contradictions sont décrites avec les deux valeurs (ex. « 107,25 et 112,25 tracées sur la même étendue »).
 
-### Comparaison avec Gemini 2.5 Flash (modèle économique)
+**Relecture manuelle des signalements** : le comptage automatique accepte toute anomalie qui touche le bon champ (ou, pour les contradictions, toute anomalie de type « incohérence »). Relus un par un, **15 signalements sur 16 désignent bien l'erreur** ; le seizième (test-e007) signale une incohérence, mais sur un autre point du plan. Le comptage automatique est donc légèrement optimiste ; les chiffres relus sont donnés dans la comparaison ci-dessous.
 
-Mêmes jeux de test, même prompt v2, via OpenRouter (`openrouter:google/gemini-2.5-flash`). Les scores portent sur les réponses valides.
+### Comparaison des modèles
 
-| Jeu / champ | Claude Sonnet 5.5 | Gemini 2.5 Flash |
-|---|---|---|
-| **Tôlerie : profil de pliage** (PDF / scan / photo) | **100 / 100 / 96 %** | 78 / 75 / 72 % |
-| Tôlerie : nombre de plis | 100 / 100 / 100 % | 84 / 85 / 84 % |
-| Tôlerie : encombrement | 100 / 92 / 94 % | 80 / 77 / 76 % |
-| Tôlerie : type de traitement | 100 / 100 / 100 % | 86 / 90 / 90 % |
-| Tôlerie : matière, épaisseur, trous, cotes | 100 % | 98 – 100 % |
-| **Plans erronés signalés** | **16 / 16** | 7 / 15 |
-| cadsy : rappel des cotes | 98 % | 81 % |
-| cadsy : type de tolérance géométrique | 54 % | 39 % |
-| ecado : soudures | 98 % | 87 % |
-| ecado : cotes | 97 % | 86 % |
-| ecado : type de tolérance géométrique | 69 % | 41 % |
-| Réponses valides (JSON conforme) | 236 / 236 | 232 / 236 |
-| **Coût par plan** (équivalent API) | ~0,05 $ | **~0,008 $** (6 fois moins) |
-| Durée par plan | ~20 s | ~10 s |
+Mêmes jeux de test, même prompt v2, trois modèles :
+- **Claude Sonnet 5.5** (haut de gamme, `claude-code:sonnet`, abonnement Claude) ;
+- **Gemini 2.5 Flash** (économique, `openrouter:google/gemini-2.5-flash`) ;
+- **Qwen3.8 27B** (open source, poids publics, `nous:qwen/qwen3.8-27b`, abonnement Nous Research).
 
-**Analyse des erreurs de Gemini**
-- **Profil de pliage** : sur les pièces à 4 plis (chapeau), il ne garde souvent que 3 ailes sur 5 et oublie les ailes verticales (nombre de plis 2 au lieu de 4). C'est l'erreur la plus coûteuse pour le devis : nombre de plis et développé faux.
-- **Plans erronés** : il signale bien la matière et l'épaisseur absentes (7 / 7), mais **invente** la longueur d'aile manquante (4 / 4, mesurée sur le dessin) et **ne voit aucune** cote contradictoire (0 / 4). Or c'est exactement ce que la validation humaine a besoin de savoir.
-- **Type de traitement** : « thermolaquage » rangé en « peinture » (proche, mais faux pour le prix).
-- **Format** : 4 réponses non conformes même après relance (champ mal structuré).
-- Le texte (cartouche, matière, épaisseur, notes) est aussi bien lu que par Claude.
+Les scores portent sur les réponses valides. Tôlerie : PDF propre / scan / photo.
 
-**À retenir** : Claude est nettement meilleur sur ce qui coûte cher en cas d'erreur (géométrie des plis, signalement des problèmes) ; Gemini Flash ne suffit que pour le texte du plan. À 0,05 $ par plan, le coût de Claude est négligeable devant le coût d'une erreur de devis : **Claude Sonnet est le modèle retenu pour la V1**. Gemini Flash pourrait servir à un premier tri (lecture du cartouche) si le volume l'exigeait.
+| Jeu / champ | Claude Sonnet 5.5 | Gemini 2.5 Flash | Qwen3.8 27B |
+|---|---|---|---|
+| **Tôlerie : profil de pliage** | **100 / 100 / 96 %** | 78 / 75 / 72 % | 84 / 88 / 78 % ¹ |
+| Tôlerie : nombre de plis | 100 / 100 / 100 % | 84 / 85 / 84 % | 84 / 90 / 82 % ¹ |
+| Tôlerie : encombrement | 100 / 92 / 94 % | 80 / 77 / 76 % | 88 / 82 / 88 % |
+| Tôlerie : type de traitement | 100 / 100 / 100 % | 86 / 90 / 90 % | 94 / 92 / 92 % |
+| Tôlerie : matière, épaisseur, trous, cotes | 100 % | 98 – 100 % | 97 – 100 % |
+| Tôlerie : coins (précision) | 100 % | 88 – 97 % | 83 – 94 % (coins en trop) |
+| **Plans erronés signalés** (automatique / relu) | **16 / 16 — 15 / 16** | 7 / 15 — 7 / 15 | 14 / 16 — 13 / 16 |
+| cadsy : rappel des cotes | 98 % | 81 % | 94 % (précision 84 %) |
+| cadsy : type de tolérance géométrique | 54 % | 39 % | 45 % |
+| ecado : soudures | 98 % | 87 % | 82 % |
+| ecado : cotes | 97 % | 86 % | 79 % |
+| ecado : type de tolérance géométrique | 69 % | 41 % | 36 % |
+| Réponses valides (JSON conforme) | 236 / 236 | 232 / 236 | 236 / 236 ² |
+| **Coût par plan** (équivalent API) | ~0,05 $ | **~0,008 $** | ~0,024 $ |
+| Durée par plan | ~20 s | ~10 s | ~55 s (modèle qui « réfléchit » avant de répondre) |
+
+¹ Dont 4 plaques sans pli pour lesquelles Qwen ne donne pas de profil : comptées « manquant », mais sans conséquence pour le devis (aucun pli). Sans elles, le profil de pliage serait à 92 / 96 / 86 %.
+² Après relance de 2 appels interrompus par un délai réseau.
+
+**Analyse des erreurs**
+- **Pièces à 4 plis (chapeau)** : Gemini et Qwen gardent souvent 3 ailes sur 5 et oublient les ailes verticales (2 plis au lieu de 4). C'est l'erreur la plus coûteuse pour le devis : nombre de plis et développé faux. Qwen le signale parfois par une anomalie, Gemini jamais.
+- **Plans erronés** : les trois modèles signalent la matière et l'épaisseur absentes. Pour les erreurs de cotes, Gemini **invente** la longueur d'aile manquante (4 / 4) et **ne voit aucune** contradiction (0 / 4) ; Qwen en détecte la plupart (aile manquante 3 / 4 dont 1 ambigu, contradictions 3 / 4) ; Claude les détecte toutes sauf un cas ambigu.
+- **Type de traitement** : Gemini et Qwen rangent parfois « thermolaquage » en « peinture » (proche, mais faux pour le prix).
+- **Texte du plan** (cartouche, matière, épaisseur, notes) : bien lu par les trois modèles.
+
+**À retenir** : Claude Sonnet est nettement meilleur sur ce qui coûte cher en cas d'erreur (géométrie des plis, signalement des problèmes) et reste peu coûteux (~0,05 $ par plan, négligeable devant le coût d'une erreur de devis) : **c'est le modèle retenu pour la V1**. Qwen3.8 27B est le meilleur des deux autres, notamment pour signaler les problèmes : c'est le **repli** si les données ne doivent pas sortir de l'entreprise (modèle à poids publics, hébergeable en interne). Gemini Flash ne suffit que pour le texte du plan.
 
 ### Plans de tôlerie générés — développement, 15 plans
 
@@ -132,7 +142,7 @@ Sur piece_003 (seul vrai plan de tôlerie, utilisé pour écrire le prompt) : to
 
 **Ce qui est fiable**
 - Sur les plans de tôlerie générés, **tout ce qui sert au devis** (matière, épaisseur, profil de pliage, trous, coins, composants, traitement) est lu à 96 – 100 %, y compris sur scan et photo.
-- Les **erreurs du plan** (information absente, cotes contradictoires) sont signalées dans 16 cas sur 16, sans invention.
+- Les **erreurs du plan** (information absente, cotes contradictoires) sont signalées dans 15 cas sur 16 (relecture manuelle), sans invention.
 - Le **texte du plan** (cartouche, matière, traitement, notes, unités) est lu quasiment sans erreur.
 - Les **cotes** sont retrouvées à 97 – 98 %, sur des plans simples comme sur des plans CAO denses.
 - Les **valeurs** des tolérances géométriques et des états de surface sont toutes justes.
@@ -148,7 +158,7 @@ Sur piece_003 (seul vrai plan de tôlerie, utilisé pour écrire le prompt) : to
 - Scan et photo sont **simulés** : pas de pliure du papier, de reflet, d'annotation manuscrite ni de photo partielle.
 - Les jeux publics (cadsy, ecado) ne contiennent pas de plis ; ils mesurent surtout la lecture du texte et des cotes.
 - Précision des cotes cadsy (84 %) : la bonne réponse ignore les annotations composées (profondeurs de perçage, oblongs), que le modèle lit pourtant. Une partie des cotes « en trop » sont donc justes.
-- Deux modèles seulement (un haut de gamme, un économique) : pas encore de modèle open source.
+- Trois modèles (haut de gamme, économique, open source), un seul prompt (v2, écrit et mis au point avec Claude) : les deux autres modèles pourraient gagner un peu avec un prompt adapté.
 
 ---
 
@@ -179,6 +189,5 @@ De même, l'annotation de piece_003 a été alignée sur les conventions v2 (not
 
 ## 6. Prochaines étapes
 
-1. **Modèle open source** (par exemple Qwen3-VL) pour compléter la comparaison qualité / coût ; le modèle économique (Gemini 2.5 Flash) est fait.
-2. **Vrais plans** : quelques plans de tôlerie réels annotés à la main (ou MechAtlas, voir [evaluation.md](evaluation.md)) pour vérifier l'écart avec les plans générés.
-3. **Contrôles par le code** dans l'outil : recalculer l'encombrement à partir du profil, vérifier la somme des ailes, pour attraper les cotes mal lues en photo.
+1. **Vrais plans** : quelques plans de tôlerie réels annotés à la main (ou MechAtlas, voir [evaluation.md](evaluation.md)) pour vérifier l'écart avec les plans générés.
+2. **Contrôles par le code** dans l'outil : recalculer l'encombrement à partir du profil, vérifier la somme des ailes, pour attraper les cotes mal lues en photo.
