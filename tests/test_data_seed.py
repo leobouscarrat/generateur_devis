@@ -5,12 +5,21 @@ from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import sessionmaker
 
 from generateur_devis.data.seed import seed
-from generateur_devis.data.tables import Base, Composant, Matiere, VitesseCoupe
+from generateur_devis.data.tables import (
+    Base,
+    Composant,
+    Matiere,
+    Operation,
+    Parametre,
+    Poste,
+    TempsPliage,
+    VitesseCoupe,
+)
 
 expected_tables = {
     "matieres", "epaisseurs_dispo", "postes", "vitesses_coupe",
     "temps_pliage", "operations", "composants", "traitements",
-    "parametres", "clients", "historique_devis", "bornes_controle",
+    "parametres", "clients", "historique_devis", "bornes_controle"
 }
 
 
@@ -146,30 +155,90 @@ def test_piece_003_compatibilite_cout_prix(session):
     """Compatibilité piece_003 : données seedées doivent permettre coût ≈ 2,20 € / prix ≈ 2,93 € à qté 100."""
     seed(session)
 
-    # --- Récupération des valeursDepuis les tables initialisées ---
+    # --- Récupération des valeurs depuis les tables initialisées ---
     matiere = session.query(Matiere).filter_by(id="S235JR").one()
     assert matiere.prix_eur_kg == 1.10, f"S235JR prix_eur_kg attendu 1.10, got {matiere.prix_eur_kg}"
+    assert matiere.densite_kg_dm3 == 7.85, f"S235JR densite attendue 7.85, got {matiere.densite_kg_dm3}"
 
     # Vitesses de coupe laser acier 2mm
     vitesse = session.query(VitesseCoupe).filter_by(
         poste_id="LASER_3KW", famille="acier", epaisseur_mm=2.0
     ).one()
     assert vitesse.vitesse_m_min == 5.0, f"Vitesse acier 2mm attendue 5.0, got {vitesse.vitesse_m_min}"
+    assert vitesse.temps_amorcage_s == 1.0, f"Tempsamorçage acier 2mm attendue 1.0, got {vitesse.temps_amorcage_s}"
 
     # Composant écrou M6 acier
     composant = session.query(Composant).filter_by(reference="ES-M6-A").one()
     assert composant.prix_unitaire_eur == 0.20
 
-    # --- Vérification du calcul piece_003 §8.3 ---
-    # Coût de revient unitaire ≈ 2,20 € pour qté 100
-    # Prix unitaire (marge 25 %) ≈ 2,93 €
-    # Formule : Prix = Coût ÷ (1 - 0,25) → 2,20 ÷ 0,75 = 2,933... ≈ 2,93 €
+    # Paramètres globaux
+    parametre = session.query(Parametre).filter_by(cle="marge_defaut").one()
+    marge = float(parametre.valeur)
 
-    marge = 0.25
-    cout_attendu = 2.20
-    prix_calcule = round(cout_attendu / (1.0 - marge), 2)
-    assert prix_calcule == 2.93, f"Prix calculé {prix_calcule} €, attendu 2,93 €"
+    # Postes machine
+    laser = session.query(Poste).filter_by(id="LASER_3KW").one()
+    plieuse = session.query(Poste).filter_by(id="PLIEUSE_CN").one()
 
-    # Tolérance ±5 % sur le coût
-    # Les valeurs dans les tables doivent être cohérentes avec le résultat attendu
-    assert 1.05 * 2.20 > 0  # placeholder vérification de cohérence
+    # Temps de pliage pour acier 2mm (catégorie petite, epaisseur_max=3.0 dans les seed data)
+    # La pièce 2mm appartient à la catégorie "petite" (ep_max=3.0)
+    temps_pliage = session.query(TempsPliage).filter_by(
+        categorie="petite", epaisseur_max_mm=3.0
+    ).one()
+
+    # --- Calcul du coût piece_003 §8.3 ---
+    # Zone flan standard : 75 × 60 mm = 4 500 mm²
+    zone_mm2 = 4500.0  # format standard piece_003 (75×60 mm), §8.3
+
+    # Bloc 1 : Matière
+    masse_kg = zone_mm2 * 2.0 * matiere.densite_kg_dm3 / 1_000_000
+    cout_matiere = masse_kg / 0.80 * matiere.prix_eur_kg  # rendement calepinage 0,80
+
+    # Bloc 2 : Découpe
+    longueur_coupe_m = 0.343  # ≈ 343 mm depuis §8.3 (contour + trous)
+    nb_amorçages = 5
+    temps_amorcage = vitesse.temps_amorcage_s
+    taux_laser = laser.taux_horaire_eur_h
+    temps_cycle_s = longueur_coupe_m / vitesse.vitesse_m_min * 60 + nb_amorçages * temps_amorcage
+    cout_variable_coupe = temps_cycle_s * taux_laser / 3600
+    cout_remise_coupe = (laser.temps_reglage_min * taux_laser / 60) / 100
+
+    # Bloc 3 : Pliage
+    nb_plis = 2
+    temps_par_pli = temps_pliage.temps_par_pli_s
+    taux_pliage = plieuse.taux_horaire_eur_h
+    cout_variable_pliage = nb_plis * temps_par_pli * taux_pliage / 3600
+    cout_remise_pliage = (plieuse.temps_reglage_min * taux_pliage / 60) / 100
+
+    # Bloc 6 : Composants & opérations secondaires
+    qte_composants = 2  # 2 écrous à sertir M6
+    cout_composants = qte_composants * composant.prix_unitaire_eur
+
+    # Taux et réglage depuis le poste de sertissage
+    poste_sertissage = session.query(Poste).filter_by(id="SERTISSEUSE").one()
+    taux_operation_h = poste_sertissage.taux_horaire_eur_h
+    reglage_h = poste_sertissage.temps_reglage_min
+
+    operation_sertissage = session.query(Operation).filter_by(id="SERTISSAGE").one()
+    # 2 écrous à sertir M6 × 12s chacun = 24s total (voir doc §8.3 : "sertissage 24 s")
+    temps_sertissage_total = 2 * operation_sertissage.temps_s
+    temps_ebavurage = session.query(Operation).filter_by(id="EBAVURAGE_P").one().temps_s
+    cout_variable_operations = (temps_sertissage_total + temps_ebavurage) * taux_operation_h / 3600
+    cout_remise_operations = (reglage_h * taux_operation_h / 60) / 100
+
+    # Totaux
+    variable_total = (cout_matiere + cout_variable_coupe + cout_variable_pliage + cout_composants + cout_variable_operations)
+    reglage_total = (cout_remise_coupe + cout_remise_pliage + cout_remise_operations)
+    cout_total = round(variable_total + reglage_total, 2)
+
+    # Vérification du coût unitaire ≈ 2,20 € (tolérance ±5 %)
+    cout_min = 2.20 * 0.95
+    cout_max = 2.20 * 1.05
+    assert cout_min <= cout_total <= cout_max, \
+        f"Coût unitaire {cout_total} € hors tolérance [ {cout_min} ; {cout_max} ]"
+
+    # Vérification du prix unitaire (marge par défaut) ≈ 2,93 € à qté 100
+    prix_calcule = round(cout_total / (1.0 - marge), 2)
+    prix_min = round((cout_min) / (1.0 - marge), 2)
+    prix_max = round((cout_max) / (1.0 - marge), 2)
+    assert prix_min <= prix_calcule <= prix_max, \
+        f"Prix unitaire {prix_calcule} € hors tolérance [ {prix_min} ; {prix_max} ]"

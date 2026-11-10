@@ -219,11 +219,11 @@ def _generer_coût_unitaire(matiere_id: str, epaisseur_mm: float, quantité: int
     """Calcul simple du coût matière unitaire (hors main-d'œuvre, traitements, composants).
 
     Utilise la densité de la matière, l'épaisseur et une zone de flan standard
-    (approximative : 4500 mm², soit l'équivalent format piece_003) avec rendement
-    de calepinage 0,80, conformément à docs/logique_metier.md §1 et §8.
+    (4500 mm², format piece_003 : 75 × 60 mm, soit la référence §8.3)
+    avec rendement de calepinage 0,80, conformément à docs/logique_metier.md §1 et §8.
     """
     matiere = next(m for m in _MATIERES if m.id == matiere_id)
-    zone_mm2 = 4500.0  # zone englobante standard approximative
+    zone_mm2 = 4500.0  # format standard piece_003 : 75 × 60 mm (§8.3), surface englobante du flan
     masse_kg = zone_mm2 * epaisseur_mm * matiere.densite_kg_dm3 / 1_000_000
     coût_matière = masse_kg / 0.80 * matiere.prix_eur_kg
     return round(coût_matière, 2)
