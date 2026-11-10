@@ -46,17 +46,7 @@ Dans une usine, ces données existent déjà, mais elles sont dispersées : fich
 | `historique_devis` | Devis passés | Contrôle de cohérence, recherche de pièces similaires | À chaque devis |
 | `bornes_controle` | Plages de valeurs réalistes | Contrôles de fiabilité | Rare |
 
-Relations entre les tables :
-
-```mermaid
-erDiagram
-    matieres ||--o{ epaisseurs_dispo : "disponible en"
-    matieres ||--o{ vitesses_coupe : "se coupe à"
-    postes ||--o{ vitesses_coupe : "machine"
-    postes ||--o{ operations : "réalisée sur"
-    clients ||--o{ historique_devis : "a demandé"
-    matieres ||--o{ historique_devis : "en"
-```
+Schéma des tables : voir [src/generateur_devis/data/README.md](../src/generateur_devis/data/README.md) (diagramme ER maintenu avec le code, d'après `src/generateur_devis/data/tables.py`).
 
 ---
 
@@ -142,7 +132,7 @@ Chaque machine ou poste de travail, avec son taux horaire chargé et son temps d
 
 ### 2.4 `vitesses_coupe`
 
-Vitesse de coupe effective et temps d'amorçage, par machine, matière et épaisseur. La vitesse « effective » tient déjà compte des ralentissements dans les angles et les petits contours.
+Vitesse de coupe effective et temps d'amorçage, par machine, famille de matière et épaisseur. La vitesse « effective » tient déjà compte des ralentissements dans les angles et les petits contours.
 
 | Colonne | Type | Description |
 |---|---|---|
@@ -292,6 +282,13 @@ Traitements de surface, généralement sous-traités. Le prix est au m² (ou au 
 
 Paramètres globaux du calcul. Ce sont les « boutons » que la direction ou le chargé d'affaires peut ajuster.
 
+| Colonne | Type | Description |
+|---|---|---|
+| `cle` | texte | Identifiant du paramètre |
+| `valeur` | texte | Valeur **stockée en texte** (certains paramètres sont des listes ou du texte) ; le typage (`float`, `list[int]`, `str`) est fait à la lecture par la couche Pydantic, selon la clé |
+| `unite` | texte | Unité d'affichage |
+| `description` | texte | Rôle du paramètre |
+
 | cle | valeur | unite | description |
 |---|---|---|---|
 | `marge_defaut` | 0,25 | taux | Taux de marge appliqué au coût (prix = coût ÷ (1 − marge)) |
@@ -309,7 +306,7 @@ Paramètres globaux du calcul. Ce sont les « boutons » que la direction ou le 
 
 ### 3.1 `clients`
 
-Clients fictifs, avec une marge spécifique. Si `marge_specifique` est vide, on applique `marge_defaut`.
+Clients fictifs, avec une marge spécifique. Si `marge_specifique` est vide, on applique `marge_defaut`. Les quatre dernières colonnes portent les réglages de confidentialité par client (voir [architecture.md §11.3](architecture.md)) : usage de l'IA externe, réutilisation des plans, durée de conservation.
 
 | Colonne | Type | Description |
 |---|---|---|
@@ -317,14 +314,17 @@ Clients fictifs, avec une marge spécifique. Si `marge_specifique` est vide, on 
 | `nom` | texte | Nom (fictif) |
 | `secteur` | texte | Secteur d'activité |
 | `marge_specifique` | décimal | Marge négociée (vide = défaut) |
-| `conditions` | texte | Conditions particulières |
+| `ia_externe_autorisee` | booléen | Le client accepte que ses plans soient traités par une IA externe |
+| `reutilisation_autorisee` | booléen | Ses plans peuvent servir d'exemples / de comparaison pour d'autres devis |
+| `duree_conservation_plans_jours` | entier | Durée de conservation des plans (défaut 90) |
+| `suppression_si_refus` | booléen | Supprimer les plans immédiatement si le client refuse l'IA externe |
 
-| id | nom | secteur | marge_specifique | conditions |
-|---|---|---|---|---|
-| CLI001 | Client Alpha | Poids lourds | 0,18 | Contrat cadre, gros volumes |
-| CLI002 | Client Bêta | Machines agricoles | 0,25 | — |
-| CLI003 | Client Gamma | Ferroviaire | 0,30 | Contrôle 100 % exigé |
-| CLI004 | Client Delta | Agencement | — | Petites séries |
+| id | nom | secteur | marge_specifique | ia_externe | reutilisation | conservation (j) | suppr. si refus |
+|---|---|---|---|---|---|---|---|
+| CLI001 | Client Alpha | Poids lourds | 0,18 | oui | oui | 365 | non |
+| CLI002 | Client Bêta | Machines agricoles | 0,25 | oui | non | 90 | oui |
+| CLI003 | Client Gamma | Ferroviaire | 0,30 | non | non | 90 | oui |
+| CLI004 | Client Delta | Agencement | — | oui | oui | 90 | oui |
 
 ---
 

@@ -50,7 +50,21 @@ def test_vitesses_coupe_a_une_cle_composite():
     assert set(pk["constrained_columns"]) == {"poste_id", "famille", "epaisseur_mm"}
 
 
+def test_epaisseurs_dispo_a_une_cle_composite():
+    """Une ligne par couple matière × épaisseur (sources_donnees.md §2.2)."""
+    pk = _inspecteur().get_pk_constraint("epaisseurs_dispo")
+    assert set(pk["constrained_columns"]) == {"matiere_id", "epaisseur_mm"}
+
+
 def test_colonnes_obligatoires_matieres():
     colonnes = {c["name"]: c for c in _inspecteur().get_columns("matieres")}
     for nom in ("id", "famille", "densite_kg_dm3", "prix_eur_kg"):
         assert not colonnes[nom]["nullable"], f"{nom} doit être NOT NULL"
+
+
+def test_parametres_valeur_est_en_texte():
+    """valeur stocke du texte (« 0.25 », « 1,10,100,1000 », « EUR ») ;
+    le typage est fait à la lecture par la couche Pydantic (sources_donnees.md §2.9)."""
+    colonnes = {c["name"]: c for c in _inspecteur().get_columns("parametres")}
+    assert not colonnes["valeur"]["nullable"]
+    assert str(colonnes["valeur"]["type"]) == "VARCHAR"

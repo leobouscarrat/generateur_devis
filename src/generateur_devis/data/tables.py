@@ -44,7 +44,7 @@ class EpaisseurDispo(Base):
     matiere_id: Mapped[str] = mapped_column(
         ForeignKey("matieres.id", ondelete="CASCADE"), primary_key=True
     )
-    epaisseur_mm: Mapped[float] = mapped_column(nullable=False)
+    epaisseur_mm: Mapped[float] = mapped_column(nullable=False, primary_key=True)
     format_mm: Mapped[str] = mapped_column(nullable=True, default="3000 × 1500")
     surcout_pct: Mapped[float] = mapped_column(nullable=False, default=0.0)
     en_stock: Mapped[bool] = mapped_column(nullable=False, default=True)
@@ -182,7 +182,10 @@ class Parametre(Base):
     __tablename__ = "parametres"
 
     cle: Mapped[str] = mapped_column(primary_key=True)
-    valeur: Mapped[float] = mapped_column(nullable=False)
+    # Texte : la colonne accueille aussi des listes (« 1,10,100,1000 ») ou du
+    # texte (« EUR ») ; le typage (float, list[int], str) est fait à la lecture
+    # par la couche Pydantic, selon la clé.
+    valeur: Mapped[str] = mapped_column(nullable=False)
     unite: Mapped[str] = mapped_column(nullable=True, default=None)
     description: Mapped[str] = mapped_column(nullable=True, default=None)
 
