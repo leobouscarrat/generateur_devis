@@ -30,3 +30,4 @@ data/prive/
 # Base SQLite locale (référentiels simulés)
 data/*.db
 secrets.toml
+plan_test.pdf
