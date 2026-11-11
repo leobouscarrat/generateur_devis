@@ -56,6 +56,65 @@ def piece_support() -> PieceExtraite:
     )
 
 
+def test_ajout_element_trous(monkeypatch):
+    """Cas utilisateur : « 2 trous Ø8.75 » non extraits → ajout via contours.trous."""
+    piece = piece_support().model_copy(update={
+        "contours": Contours(coins=[CoinCoupe(type="chanfrein", cote1=20.0, quantite=2)])
+    })
+    _bouchon_modele(monkeypatch, {
+        "diffs": [
+            {"type": "ajout_element", "chemin": "contours.trous",
+             "nouvelle_valeur": {"forme": "rond", "diametre": 8.75, "quantite": 2},
+             "justification": "2 trous Ø8.75 sur le plan"}
+        ]
+    })
+    proposition = proposer_correction(piece, "il y a 2 trous Ø8.75", "test")
+    lignes = proposition.ligne_avant_apres(piece)
+    assert lignes[0][0] == "contours.trous"
+
+    corrigee = proposition.appliquer(piece)
+    assert len(corrigee.contours.trous) == 1
+    assert corrigee.contours.trous[0].diametre == 8.75
+    assert corrigee.contours.trous[0].quantite == 2
+    assert len(corrigee.contours.coins) == 1  # le reste de la fiche est préservé
+    assert len(piece.contours.trous) == 0  # l'originale n'est jamais modifiée
+
+
+def test_ajout_element_liste_non_enrichissable_rejetee(monkeypatch):
+    _bouchon_modele(monkeypatch, {
+        "diffs": [
+            {"type": "ajout_element", "chemin": "tolerances_geometriques",
+             "nouvelle_valeur": {}, "justification": "?"}
+        ]
+    })
+    with pytest.raises(ErreurCorrection, match="non enrichissable"):
+        proposer_correction(piece_support(), "ajoute une tolérance", "test")
+
+
+def test_ajout_element_invalide_rejete_a_l_application():
+    """Un élément invalide (quantité nulle) est rejeté."""
+    proposition = PropositionCorrection(diffs=[DiffCorrection(
+        type="ajout_element", chemin="contours.trous",
+        nouvelle_valeur={"forme": "rond", "diametre": 8.0, "quantite": 0},
+        justification="?",
+    )])
+    with pytest.raises(ErreurCorrection, match="invalide"):
+        proposition.appliquer(piece_support())
+
+
+def test_ajout_composant_reste_accepte():
+    """Rétrocompatibilité : l'ancien type ajout_composant fonctionne toujours."""
+    proposition = PropositionCorrection(diffs=[DiffCorrection(
+        type="ajout_composant", chemin=None,
+        nouvelle_valeur={"designation": "Écrou M6", "type": "ecrou_a_sertir",
+                         "filetage": "M6", "quantite": 4},
+        justification="?",
+    )])
+    corrigee = proposition.appliquer(piece_support())
+    assert len(corrigee.composants) == 1
+    assert corrigee.composants[0].designation == "Écrou M6"
+
+
 def test_sections_creables_couvrent_toutes_les_sections_optionnelles():
     """Garde-fou d'extension : toute section nullable du schéma doit être dans
     SECTIONS_CREABLES (aujourd'hui : uniquement profil_pliage). Si une nouvelle
