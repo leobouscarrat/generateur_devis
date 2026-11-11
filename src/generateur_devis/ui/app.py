@@ -13,7 +13,7 @@ from __future__ import annotations
 import math
 import os
 import uuid
-from collections.abc import MutableMapping
+from collections.abc import Collection, MutableMapping
 from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Literal
@@ -134,6 +134,75 @@ def valeur_initiale(
             f"({minimum_txt}), à saisir.",
         )
     return ValeurInitiale(lue, "plan", f"{libelle} : lu sur le plan.")
+
+
+@dataclass(frozen=True)
+class MatiereInitiale:
+    """Pré-sélection de la liste « Matière » et son origine (issue #55)."""
+
+    matiere_id: str | None  # id du référentiel à pré-sélectionner ; None = liste vide
+    origine: Literal["depot", "plan", "assistant", "inconnue", "absente"]
+    explication: str  # toujours non vide, affichée sous la liste (⛔ si matiere_id is None)
+    alerte: str | None = None  # conflit dépôt ≠ plan → ⚠️ en tête du formulaire
+
+
+def matiere_initiale(
+    matiere_depot: str | None,
+    designation: str | None,
+    ids_connus: Collection[str],
+    corrigee: bool = False,
+) -> MatiereInitiale:
+    """Matière à pré-sélectionner : choix du dépôt, sinon désignation de la pièce si
+    elle est un id du référentiel, sinon aucune. Jamais de repli sur une matière
+    arbitraire. Même priorité que ``pipeline._resoudre_matiere``.
+
+    ``designation`` : ``piece.matiere.designation.valeur`` de la pièce affichée
+    (espaces retirés ; "" traité comme None). Correspondance exacte (sensible à
+    la casse), comme ``get_matiere``. ``corrigee`` : True si cette désignation a
+    été modifiée par l'assistant (diff accepté), pour annoncer la bonne origine.
+    ``ids_connus`` : identifiants des matières du référentiel (la base).
+    """
+    designation = (designation or "").strip() or None
+    source = "la correction de l'assistant" if corrigee else "le plan"
+    prefixe = ""
+    if matiere_depot is not None and matiere_depot not in ids_connus:
+        prefixe = f"Choix du dépôt « {matiere_depot} » inconnu du référentiel ; "
+        matiere_depot = None
+
+    if matiere_depot is not None:
+        if designation is None:
+            return MatiereInitiale(
+                matiere_depot, "depot", "Matière : choisie au dépôt (absente du plan)."
+            )
+        if designation == matiere_depot:
+            return MatiereInitiale(
+                matiere_depot, "depot", "Matière : choisie au dépôt, identique au plan."
+            )
+        return MatiereInitiale(
+            matiere_depot,
+            "depot",
+            "Matière : choisie au dépôt.",
+            f"⚠️ Matière : choix du dépôt {matiere_depot} retenu, "
+            f"{source} indique « {designation} ».",
+        )
+    if designation is None:
+        return MatiereInitiale(
+            None,
+            "absente",
+            prefixe + "Matière : absente du plan et non choisie au dépôt : à choisir.",
+        )
+    if designation in ids_connus:
+        if corrigee:
+            return MatiereInitiale(
+                designation, "assistant", prefixe + "Matière : corrigée par l'assistant."
+            )
+        return MatiereInitiale(designation, "plan", prefixe + "Matière : lue sur le plan.")
+    lue = "corrigée par l'assistant" if corrigee else "lue sur le plan"
+    return MatiereInitiale(
+        None,
+        "inconnue",
+        prefixe + f"Matière : « {designation} » {lue}, inconnue du référentiel : à choisir.",
+    )
 
 
 def revenir_au_depot(etat: MutableMapping[str, object]) -> None:
@@ -400,7 +469,7 @@ def ecran_depot() -> ResultatDevis | None:
         nom_client = st.selectbox("Client", ["(sans)"] + list(choix_clients))
         client_id = choix_clients.get(nom_client)
         matiere = st.selectbox(
-            "Matière (si absente du plan)", ["(à extraire)"] + list(choix_matieres)
+            "Matière (prioritaire sur le plan)", ["(à extraire)"] + list(choix_matieres)
         )
         matiere_id = None if matiere == "(à extraire)" else choix_matieres[matiere]
     with col2:
@@ -438,6 +507,7 @@ def ecran_depot() -> ResultatDevis | None:
             "client_id": client_id,
             "quantites": quantites,
             "nom_modele": nom_modele,
+            "matiere_id": matiere_id,  # choix du dépôt, None si « (à extraire) »
         }
         st.rerun()
 
@@ -564,8 +634,8 @@ def _champ_borne(
 
 
 def _editer_piece(
-    piece: PieceExtraite, choix_matieres: dict[str, str]
-) -> tuple[PieceExtraite | None, str, list[str]]:
+    piece: PieceExtraite, choix_matieres: dict[str, str], matiere: MatiereInitiale
+) -> tuple[PieceExtraite | None, str | None, list[str]]:
     """Formulaire borné V1 : matière, épaisseur, largeur, profil de pliage, trous.
 
     Retourne la pièce reconstruite, la matière choisie et les erreurs de
@@ -601,17 +671,23 @@ def _editer_piece(
     initiales["Rayon de pliage général (mm)"] = valeur_initiale(
         "Rayon de pliage général (mm)", _lue(rayon_extrait), RAYON_MIN_MM, defaut_rayon
     )
+    if matiere.alerte:
+        st.warning(matiere.alerte)
     for initiale in initiales.values():
         if initiale.origine == "defaut":
             st.warning(f"⚠️ {initiale.explication}")
 
     col1, col2, col3, col4 = st.columns(4)
     with col1:
-        matiere_defaut = piece.matiere.designation.valeur
-        libelles = list(choix_matieres)
+        # Pré-sélection sans repli sur l'index 0 : aucune matière connue →
+        # liste vide + ⛔, choix explicite exigé (issue #55).
         ids = list(choix_matieres.values())
-        index = ids.index(matiere_defaut) if matiere_defaut in ids else 0
-        matiere_id = choix_matieres[st.selectbox("Matière", libelles, index=index)]
+        index = ids.index(matiere.matiere_id) if matiere.matiere_id else None
+        libelle = st.selectbox(
+            "Matière", list(choix_matieres), index=index, placeholder="Choisir une matière"
+        )
+        matiere_id = choix_matieres[libelle] if libelle is not None else None
+        st.caption(("⛔ " if matiere_id is None else "") + matiere.explication)
     with col2:
         epaisseur = _champ_borne(
             "Épaisseur (mm)", initiales["Épaisseur (mm)"], EPAISSEUR_MIN_MM, 0.5
@@ -692,7 +768,8 @@ def _editer_piece(
     elements: list[Aile | Pli] = []
     lignes_profil_editees = tableau_profil.to_dict("records")
     lignes_trous_editees = tableau_trous.to_dict("records")
-    erreurs = [
+    erreurs = [matiere.explication] if matiere_id is None else []
+    erreurs += [
         initiales[libelle].explication
         if initiales[libelle].origine in ("absente", "hors_bornes")
         else f"{libelle} : valeur à saisir."
@@ -761,7 +838,14 @@ def ecran_validation() -> None:
             {tid for tid in TRAITEMENT_ID_PAR_TYPE.values() if get_traitement(tid, session)}
         )
 
-        editee, matiere_id, erreurs_saisie = _editer_piece(piece, choix_matieres)
+        designation = piece.matiere.designation.valeur
+        matiere = matiere_initiale(
+            contexte.get("matiere_id"),
+            designation,
+            choix_matieres.values(),
+            corrigee=designation != piece_extraite.matiere.designation.valeur,
+        )
+        editee, matiere_id, erreurs_saisie = _editer_piece(piece, choix_matieres, matiere)
         if editee is None:
             for erreur in erreurs_saisie:
                 st.error(f"⛔ Saisie incomplète — {erreur}")

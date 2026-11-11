@@ -26,7 +26,7 @@ from generateur_devis.schema.piece import (
     ProfilPliage,
     Trou,
 )
-from generateur_devis.ui.app import _editer_piece
+from generateur_devis.ui.app import _editer_piece, matiere_initiale
 from generateur_devis.ui.pipeline import orchestrer_devis, rechiffrer
 
 # ── Fixtures partagées ──────────────────────────────────────────────────────────
@@ -167,7 +167,8 @@ def test_c7_matiere_modifiable_sur_ecran_validation(session, monkeypatch):
         ids = list(choix.values())
 
     # Teste que _editer_piece accepte une matière différente de la défaut
-    piece_modifiee, matiere_choisie, erreurs = _editer_piece(piece, choix)
+    matiere = matiere_initiale(None, piece.matiere.designation.valeur, ids)
+    piece_modifiee, matiere_choisie, erreurs = _editer_piece(piece, choix, matiere)
 
     # Vérifie que la matière a bien été modifiée
     assert erreurs == [], "Pas d'erreur de saisie sur le formulaire initial"
