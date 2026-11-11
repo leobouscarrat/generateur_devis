@@ -8,7 +8,7 @@ import json
 
 from generateur_devis.schema.export import json_schema
 
-VERSION_PROMPT = "v2"
+VERSION_PROMPT = "v3"
 
 CONSIGNES = """\
 Tu es technicien méthodes dans un atelier de tôlerie. Tu lis un plan technique de pièce \
@@ -37,6 +37,12 @@ sur le plan ou rattachés à aucun trait (ex. « FILLET », « SPOT », « PLUG 
 11. Chaque information va dans son champ, pas dans « notes » : traitement (« FINISH »), \
 tolérance générale, états de surface (Ra, RMS), cadres de tolérance géométrique, échelle \
 et cartouche. « notes » ne contient que les notes écrites du plan.
+12. Dimensions des trous : un trou rond → « diametre » ; un oblong, un carré ou un \
+rectangle → « longueur » ET « largeur » (les deux, « diametre » à null). Un « 4x » \
+devant une cote de trou va dans « quantite », pas dans les dimensions.
+13. Rayons de pliage : une note générale (ex. « R2 UNLESS OTHERWISE SPECIFIED », \
+« BENDING RADIUS 2 mm ») va dans « rayon_pliage_general » ; un rayon coté sur un pli \
+précis va dans le « rayon_interieur » de ce pli.
 """
 
 
