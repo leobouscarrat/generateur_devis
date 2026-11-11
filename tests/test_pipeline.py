@@ -83,6 +83,37 @@ def session():
     session.close()
 
 
+def test_pipeline_bout_en_bout_pdf_reel(monkeypatch, session, tmp_path):
+    """Bout en bout : vrai PDF → vrai ``charger_plan`` (PyMuPDF) → pipeline.
+
+    Seul l'appel IA est bouchonné : la chaîne fichier temporaire →
+    chargement du document → géométrie → faisabilité → chiffrage est réelle.
+    """
+    import pymupdf
+
+    chemin_pdf = tmp_path / "support.pdf"
+    with pymupdf.open() as doc:
+        page = doc.new_page()
+        page.insert_text((72, 72), "SUPPORT — S235JR — 2 mm")
+        doc.save(chemin_pdf)
+    contenu = chemin_pdf.read_bytes()
+
+    piece = piece_support(MATIERE)
+
+    def faux_extraire(document, modele, **kwargs):
+        # Le vrai charger_plan a produit un Plan avec images et texte.
+        assert document.images and "S235JR" in document.texte
+        return ResultatExtraction("test:modele", "test", piece, None)
+
+    monkeypatch.setattr(pipeline, "extraire", faux_extraire)
+    monkeypatch.setattr(pipeline, "creer_modele", lambda nom: object())
+
+    resultat = orchestrer_devis(contenu, "support.pdf", None, None, None, "test:m", session)
+    assert resultat.erreur is None
+    assert resultat.chiffrage is not None
+    assert resultat.flan is not None
+
+
 def test_pipeline_complet_matiere_du_plan(monkeypatch, session):
     """Matière lue sur le plan → chiffrage provisoire complet avec contrôles."""
     _bouchon_extraction(monkeypatch, piece_support(MATIERE))
