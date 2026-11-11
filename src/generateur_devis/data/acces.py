@@ -206,7 +206,7 @@ TRAITEMENT_ID_PAR_TYPE: dict[str, str] = {
 
 
 def get_matiere(matiere_id: str, session: Session) -> MatierePydantic | None:
-    """Retourner la matière par son identifiant, ou None si introuvable."""
+    """ Retourner la matière par son identifiant, ou None si introuvable. """
     from generateur_devis.data.tables import Matiere as MatiereTable
 
     ligne = session.get(MatiereTable, matiere_id)
@@ -224,55 +224,13 @@ def get_matiere(matiere_id: str, session: Session) -> MatierePydantic | None:
     )
 
 
-def list_matieres(session: Session) -> list[MatierePydantic]:
-    """Lister toutes les matières du référentiel (écrans, listes déroulantes)."""
-    from generateur_devis.data.tables import Matiere as MatiereTable
-
-    return [
-        MatierePydantic(
-            id=ligne.id,
-            famille=ligne.famille,
-            nuance=ligne.nuance,
-            norme=ligne.norme,
-            densite_kg_dm3=ligne.densite_kg_dm3,
-            prix_eur_kg=ligne.prix_eur_kg,
-            date_maj=ligne.date_maj,
-            fournisseur=ligne.fournisseur,
-        )
-        for ligne in session.query(MatiereTable).order_by(MatiereTable.id).all()
-    ]
-
-
-def list_clients(session: Session) -> list[ClientPydantic]:
-    """Lister tous les clients du référentiel (écrans, listes déroulantes)."""
-    from generateur_devis.data.tables import Client as ClientTable
-
-    return [
-        ClientPydantic(
-            id=ligne.id,
-            nom=ligne.nom,
-            secteur=ligne.secteur,
-            marge_specifique=ligne.marge_specifique,
-            ia_externe_autorisee=ligne.ia_externe_autorisee,
-            reutilisation_autorisee=ligne.reutilisation_autorisee,
-            duree_conservation_plans_jours=ligne.duree_conservation_plans_jours,
-            suppression_si_refus=ligne.suppression_si_refus,
-        )
-        for ligne in session.query(ClientTable).order_by(ClientTable.nom).all()
-    ]
-
-
 def list_epaisseurs(matiere_id: str, session: Session) -> list[EpaisseurDispoPydantic]:
-    """Lister toutes les épaisseurs dispo pour une matière donnée."""
+    """ Lister toutes les épaisseurs dispo pour une matière donnée. """
     from generateur_devis.data.tables import EpaisseurDispo as EpaisseurTable
 
-    lignes_db = (
-        session.execute(
-            session.query(EpaisseurTable).filter(EpaisseurTable.matiere_id == matiere_id).statement
-        )
-        .scalars()
-        .all()
-    )
+    lignes_db = session.execute(
+        session.query(EpaisseurTable).filter(EpaisseurTable.matiere_id == matiere_id).statement
+    ).scalars().all()
     return [
         EpaisseurDispoPydantic(
             matiere_id=ligne.matiere_id,
@@ -286,7 +244,7 @@ def list_epaisseurs(matiere_id: str, session: Session) -> list[EpaisseurDispoPyd
 
 
 def get_poste(poste_id: str, session: Session) -> PostePydantic | None:
-    """Retourner le poste par son identifiant, ou None si introuvable."""
+    """ Retourner le poste par son identifiant, ou None si introuvable. """
     from generateur_devis.data.tables import Poste as PosteTable
 
     ligne = session.get(PosteTable, poste_id)
@@ -307,7 +265,7 @@ def get_vitesse_coupe(
     epaisseur_mm: float,
     session: Session,
 ) -> VitesseCoupePydantic | None:
-    """Retourner la vitesse de coupe (poste + famille + épaisseur), ou None."""
+    """ Retourner la vitesse de coupe (poste + famille + épaisseur), ou None. """
     from generateur_devis.data.tables import VitesseCoupe as VitesseTable
 
     ligne = session.get(
@@ -331,7 +289,7 @@ def get_temps_pliage(
     epaisseur_mm: float,
     session: Session,
 ) -> TempsPliagePydantic | None:
-    """Retourner la plus petite tranche couvrant la dimension ET l'épaisseur.
+    """ Retourner la plus petite tranche couvrant la dimension ET l'épaisseur.
 
     On recherche parmi toutes les lignes où dim_max_mm >= dimension_mm
     ET epaisseur_max_mm >= epaisseur_mm, et on choisit celle dont la surface
@@ -347,9 +305,7 @@ def get_temps_pliage(
     def _surface(cand) -> float:
         return float(cand.dim_max_mm * cand.epaisseur_max_mm)
 
-    candidats = [
-        c for c in lignes_db if c.dim_max_mm >= dimension_mm and c.epaisseur_max_mm >= epaisseur_mm
-    ]
+    candidats = [c for c in lignes_db if c.dim_max_mm >= dimension_mm and c.epaisseur_max_mm >= epaisseur_mm]
     if not candidats:
         return None
 
@@ -382,7 +338,7 @@ def get_operation(operation_id: str, session: Session) -> OperationPydantic | No
 
 
 def get_composant(reference: str, session: Session) -> ComposantPydantic | None:
-    """Retourner le composant par sa référence, ou None si introuvable."""
+    """ Retourner le composant par sa référence, ou None si introuvable. """
     from generateur_devis.data.tables import Composant as ComposantTable
 
     ligne = session.get(ComposantTable, reference)
@@ -401,7 +357,7 @@ def get_composant(reference: str, session: Session) -> ComposantPydantic | None:
 
 
 def get_traitement(traitement_id: str, session: Session) -> TraitementPydantic | None:
-    """Retourner le traitement par son identifiant, ou None si introuvable.
+    """ Retourner le traitement par son identifiant, ou None si introuvable.
 
     NOTE : le paramètre s'appelle ``traitement_id`` et non ``id`` pour éviter
     de masquer le built-in Python ``id()``.
@@ -423,7 +379,7 @@ def get_traitement(traitement_id: str, session: Session) -> TraitementPydantic |
 
 
 def get_parametre(cle: str, session: Session) -> str | float | int:
-    """Retourner la valeur du paramètre global identifié par ``cle ''.
+    """ Retourner la valeur du paramètre global identifié par ``cle ''.
 
     Conversion TEXT → type Python selon la clé connue (8 clés seules) :
 
@@ -476,7 +432,7 @@ def get_parametre(cle: str, session: Session) -> str | float | int:
 
 
 def get_client(client_id: str, session: Session) -> ClientPydantic | None:
-    """Retourner le client par son identifiant, ou None si introuvable."""
+    """ Retourner le client par son identifiant, ou None si introuvable. """
     from generateur_devis.data.tables import Client as ClientTable
 
     ligne = session.get(ClientTable, client_id)
@@ -495,10 +451,12 @@ def get_client(client_id: str, session: Session) -> ClientPydantic | None:
 
 
 def get_bornes(session: Session) -> list[BorneControlePydantic]:
-    """Retourner toutes les bornes de contrôle de la table ``bornes_controle``."""
+    """ Retourner toutes les bornes de contrôle de la table ``bornes_controle``. """
     from generateur_devis.data.tables import BorneControle as BorneTable
 
-    lignes_db = session.execute(session.query(BorneTable).statement).scalars().all()
+    lignes_db = session.execute(
+        session.query(BorneTable).statement
+    ).scalars().all()
     return [
         BorneControlePydantic(
             champ=ligne.champ,
@@ -518,7 +476,7 @@ def list_historique_similaires(
     quantite_min: int | None = None,
     quantite_max: int | None = None,
 ) -> list[HistoriqueDevisPydantic]:
-    """Retourner l'historique de devis filtré selon les critères optionnels.
+    """ Retourner l'historique de devis filtré selon les critères optionnels.
 
     Aucun critère → retour de toutes les lignes (liste vide si pas de données).
     Les filtres sont appliqués via des jointures SQL simples sur les FK.
