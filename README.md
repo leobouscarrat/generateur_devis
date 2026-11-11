@@ -142,5 +142,5 @@ Le projet est découpé en deux parties.
 - [x] Création des données simulées
 - [x] Extraction, géométrie et faisabilité
 - [x] Moteur de calcul des coûts
-- [ ] Interface et génération du devis
+- [x] Interface et génération du devis
 - [ ] Administration des référentiels (docs/architecture.md §12 : matières/prix, postes/taux, temps standards, bornes, clients — chaque modification datée et attribuée)
