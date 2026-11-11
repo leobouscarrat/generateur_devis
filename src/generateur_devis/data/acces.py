@@ -192,6 +192,18 @@ class HistoriqueDevisPydantic(BaseModel):
 # ou None / [] pour identifiants inconnus.
 # Convention : `session: Session` est le PREMIER paramètre.
 
+# Correspondance type de traitement extrait (schema.piece) → identifiant du
+# référentiel `traitements`. Partagée par faisabilite et calcul_prix.
+TRAITEMENT_ID_PAR_TYPE: dict[str, str] = {
+    "peinture": "PEINTURE_POUDRE",
+    "thermolaquage": "PEINTURE_POUDRE",
+    "cataphorese": "CATAPHORESE",
+    "zingage": "ZINGAGE",
+    "galvanisation": "GALVA_CHAUD",
+    "anodisation": "ANODISATION",
+    "passivation": "PASSIVATION",
+}
+
 
 def get_matiere(matiere_id: str, session: Session) -> MatierePydantic | None:
     """ Retourner la matière par son identifiant, ou None si introuvable. """
@@ -309,6 +321,22 @@ def get_temps_pliage(
     )
 
 
+def get_operation(operation_id: str, session: Session) -> OperationPydantic | None:
+    """Retourner l'opération par son identifiant, ou None si introuvable."""
+    from generateur_devis.data.tables import Operation as OperationTable
+
+    ligne = session.get(OperationTable, operation_id)
+    if ligne is None:
+        return None
+    return OperationPydantic(
+        id=ligne.id,
+        nom=ligne.nom,
+        poste_id=ligne.poste_id,
+        temps_s=ligne.temps_s,
+        unite=ligne.unite,
+    )
+
+
 def get_composant(reference: str, session: Session) -> ComposantPydantic | None:
     """ Retourner le composant par sa référence, ou None si introuvable. """
     from generateur_devis.data.tables import Composant as ComposantTable
@@ -360,7 +388,8 @@ def get_parametre(cle: str, session: Session) -> str | float | int:
       regle_rayon_min_e                              → float
     - minimum_commande_eur, validite_devis_jours      → int
     - paliers_quantite                                → list[int]
-    - devise, poste_decoupe, poste_pliage             → str
+    - devise, poste_decoupe, poste_pliage,
+      operation_ebavurage, operation_taraudage          → str
 
     Si la clé est inconnue, lever ValueError.
     """
@@ -389,6 +418,8 @@ def get_parametre(cle: str, session: Session) -> str | float | int:
         "devise": str,
         "poste_decoupe": str,
         "poste_pliage": str,
+        "operation_ebavurage": str,
+        "operation_taraudage": str,
     }
 
     if cle not in _conversion:

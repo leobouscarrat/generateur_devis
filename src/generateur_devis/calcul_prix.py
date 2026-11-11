@@ -1,4 +1,8 @@
-"""Moteur de calcul des coûts — blocs 1 à 3 (matière, découpe, pliage).
+"""Moteur de calcul des coûts — blocs 1 à 6.
+
+Blocs 1 à 3 (issue #13) : matière, découpe, pliage.
+Blocs 4 à 6 (issue #14) : soudure (0 en V1), finition (option avec minimum
+de lot), composants achetés & opérations secondaires.
 
 Chiffrage déterministe d'une pièce de tôlerie, à partir de sa géométrie
 (``geometrie.construire_flan``, issue #7) et des référentiels en base lus via
@@ -26,10 +30,14 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 
 from generateur_devis.data.acces import (
+    TRAITEMENT_ID_PAR_TYPE,
+    get_composant,
     get_matiere,
+    get_operation,
     get_parametre,
     get_poste,
     get_temps_pliage,
+    get_traitement,
     get_vitesse_coupe,
 )
 from generateur_devis.geometrie import Flan
@@ -226,4 +234,249 @@ def calculer_blocs_1_3(
         matiere=calculer_bloc_matiere(flan, matiere_id, session),
         decoupe=calculer_bloc_decoupe(flan, matiere.famille, session),
         pliage=calculer_bloc_pliage(piece, flan, session),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Blocs 4 à 6 (issue #14) : soudure, finition, composants & op. secondaires
+# ---------------------------------------------------------------------------
+
+
+class BlocSoudure(BaseModel):
+    """Bloc 4 — soudure / assemblage (0 pour une pièce unique en V1)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    cout_variable_eur: float = 0.0
+    cout_fixe_eur_par_lot: float = 0.0
+
+
+class BlocFinition(BaseModel):
+    """Bloc 5 — finition / traitement de surface.
+
+    Le minimum de lot ne rentre pas dans le moule variable + fixe ÷ Q :
+    ``cout_variable_eur`` est le coût proportionnel par pièce
+    (2 × surface nette × prix) et ``cout_fixe_eur_par_lot`` le minimum de
+    lot. Règle d'agrégation (appliquée en 3.3) :
+    **contribution = max(cout_variable_eur, cout_fixe_eur_par_lot ÷ Q)**.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    traitement_id: str
+    surface_traitee_m2: float
+    prix: float
+    unite: str
+    minimum_lot_eur: float
+    cout_variable_eur: float
+    cout_fixe_eur_par_lot: float
+
+
+class BlocComposants(BaseModel):
+    """Bloc 6 — composants achetés & opérations secondaires."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    cout_composants_eur: float
+    temps_operations_s: float
+    cout_operations_eur: float
+    postes_utilises: list[str]
+    cout_variable_eur: float
+    cout_fixe_eur_par_lot: float
+
+
+class BlocsCout46(BaseModel):
+    """Les blocs 4 à 6 du chiffrage (finition absente si non spécifiée)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    soudure: BlocSoudure
+    finition: BlocFinition | None
+    composants: BlocComposants
+
+
+def calculer_bloc_soudure(piece: PieceExtraite) -> BlocSoudure:
+    """Bloc 4 : 0 pour une pièce unique découpée-pliée (V1).
+
+    Raises:
+        ErreurChiffrage: la pièce porte des soudures — l'assemblage soudé
+            est hors périmètre V1 (jamais un 0 silencieux).
+    """
+    if piece.soudures:
+        msg = (
+            f"Assemblage soudé hors périmètre V1 : {len(piece.soudures)} "
+            "soudure(s) indiquée(s) sur le plan."
+        )
+        raise ErreurChiffrage(msg)
+    return BlocSoudure()
+
+
+def calculer_bloc_finition(
+    piece: PieceExtraite,
+    flan: Flan,
+    session: Session,
+    traitement_id: str | None = None,
+) -> BlocFinition | None:
+    """Bloc 5 : coût du traitement de surface.
+
+    Surface traitée = 2 × surface nette du flan (deux faces) ; coût
+    proportionnel = surface × prix ; minimum de lot en coût fixe (règle
+    d'agrégation ``max(variable, fixe ÷ Q)``, voir ``BlocFinition``).
+
+    Args:
+        traitement_id: traitement du référentiel à chiffrer explicitement
+            (option proposée hors chiffrage de base, ex. peinture de
+            piece_003). Sinon, le type extrait du plan est résolu via
+            ``TRAITEMENT_ID_PAR_TYPE``.
+
+    Returns:
+        Le bloc, ou None si aucun traitement n'est spécifié sur le plan
+        (ou type non chiffrable en V1, ex. « autre »).
+
+    Raises:
+        ErreurChiffrage: traitement inconnu du référentiel, ou tarif au kg
+            (hors périmètre V1, seuls les tarifs au m² sont chiffrés).
+    """
+    if traitement_id is None:
+        type_t = piece.traitement.type.valeur
+        if type_t in (None, "aucun"):
+            return None
+        traitement_id = TRAITEMENT_ID_PAR_TYPE.get(str(type_t))
+        if traitement_id is None:
+            return None
+    traitement = get_traitement(traitement_id, session)
+    if traitement is None:
+        msg = f"Traitement inconnu dans le référentiel : {traitement_id!r}."
+        raise ErreurChiffrage(msg)
+    if traitement.unite != "m2":
+        msg = (
+            f"Traitement {traitement_id!r} tarifé au {traitement.unite} : "
+            "hors périmètre V1 (seuls les tarifs au m² sont chiffrés)."
+        )
+        raise ErreurChiffrage(msg)
+    surface_m2 = 2.0 * flan.surface_nette_mm2 * 1e-6
+    return BlocFinition(
+        traitement_id=traitement_id,
+        surface_traitee_m2=surface_m2,
+        prix=traitement.prix,
+        unite=traitement.unite,
+        minimum_lot_eur=traitement.minimum_lot_eur,
+        cout_variable_eur=surface_m2 * traitement.prix,
+        cout_fixe_eur_par_lot=traitement.minimum_lot_eur,
+    )
+
+
+def calculer_bloc_composants(
+    piece: PieceExtraite,
+    composants: list[tuple[str, int]],
+    session: Session,
+) -> BlocComposants:
+    """Bloc 6 : composants achetés + opérations secondaires.
+
+    Règles V1 :
+
+    - coût composants = Σ quantité × prix unitaire (table ``composants``) ;
+    - opérations : pose de chaque composant (``operation_id`` du
+      référentiel), taraudage par trou fileté (paramètre
+      ``operation_taraudage``), ébavurage systématique dès qu'il y a des
+      composants ou des taraudages (paramètre ``operation_ebavurage``) —
+      une pièce sans composant ni trou fileté a un bloc 6 à zéro ;
+    - taux = poste de chaque opération (``operations.poste_id``) ;
+    - réglage = ``temps_reglage_min`` de chaque poste **distinct** utilisé.
+
+    Args:
+        piece: pièce extraite du plan.
+        composants: couples (référence du référentiel ``composants``,
+            quantité) retenus pour le chiffrage — la nomenclature extraite
+            (``piece.composants``) sert de source à l'appelant.
+        session: session SQLAlchemy sur la base de référence.
+
+    Raises:
+        ErreurChiffrage: composant, opération ou poste inconnu du
+            référentiel.
+    """
+    zero = BlocComposants(
+        cout_composants_eur=0.0,
+        temps_operations_s=0.0,
+        cout_operations_eur=0.0,
+        postes_utilises=[],
+        cout_variable_eur=0.0,
+        cout_fixe_eur_par_lot=0.0,
+    )
+
+    def _poste(poste_id: str | None, contexte: str):
+        if poste_id is None:
+            msg = f"Pas de poste associé ({contexte})."
+            raise ErreurChiffrage(msg)
+        poste = get_poste(poste_id, session)
+        if poste is None:
+            msg = f"Poste inconnu dans le référentiel : {poste_id!r} ({contexte})."
+            raise ErreurChiffrage(msg)
+        return poste
+
+    # --- Operations applicables : (operation_id, quantité, contexte) -------
+    operations: list[tuple[str, int, str]] = []
+    cout_composants = 0.0
+    for reference, quantite in composants:
+        composant = get_composant(reference, session)
+        if composant is None:
+            msg = f"Composant inconnu dans le référentiel : {reference!r}."
+            raise ErreurChiffrage(msg)
+        cout_composants += quantite * composant.prix_unitaire_eur
+        if composant.operation_id is not None:
+            operations.append((composant.operation_id, quantite, f"pose de {reference}"))
+    nb_filetes = sum(t.quantite for t in piece.contours.trous if t.filetage)
+    if nb_filetes:
+        operations.append(
+            (str(get_parametre("operation_taraudage", session)), nb_filetes, "taraudage")
+        )
+    if operations:
+        operations.append((str(get_parametre("operation_ebavurage", session)), 1, "ébavurage"))
+    if not operations:
+        return zero
+
+    # --- Coût des opérations et réglages, par poste ------------------------
+    postes: dict[str, float] = {}  # poste_id → taux horaire
+    cout_operations = 0.0
+    temps_operations = 0.0
+    for operation_id, quantite, contexte in operations:
+        operation = get_operation(operation_id, session)
+        if operation is None:
+            msg = f"Opération inconnue dans le référentiel : {operation_id!r} ({contexte})."
+            raise ErreurChiffrage(msg)
+        poste = _poste(operation.poste_id, f"opération {operation_id}")
+        postes[poste.id] = poste.taux_horaire_eur_h
+        temps = operation.temps_s * quantite
+        temps_operations += temps
+        cout_operations += temps / 3600.0 * poste.taux_horaire_eur_h
+    reglage = 0.0
+    for poste_id in postes:
+        poste = _poste(poste_id, "réglage")
+        reglage += poste.temps_reglage_min / 60.0 * poste.taux_horaire_eur_h
+    return BlocComposants(
+        cout_composants_eur=cout_composants,
+        temps_operations_s=temps_operations,
+        cout_operations_eur=cout_operations,
+        postes_utilises=sorted(postes),
+        cout_variable_eur=cout_composants + cout_operations,
+        cout_fixe_eur_par_lot=reglage,
+    )
+
+
+def calculer_blocs_4_6(
+    piece: PieceExtraite,
+    flan: Flan,
+    session: Session,
+    composants: list[tuple[str, int]] | None = None,
+) -> BlocsCout46:
+    """Calcule les blocs 4 à 6 du chiffrage (soudure, finition, composants).
+
+    La finition n'est calculée que si un traitement est spécifié sur le
+    plan ; pour chiffrer une option (ex. peinture proposée), appeler
+    ``calculer_bloc_finition`` explicitement avec un ``traitement_id``.
+    """
+    return BlocsCout46(
+        soudure=calculer_bloc_soudure(piece),
+        finition=calculer_bloc_finition(piece, flan, session),
+        composants=calculer_bloc_composants(piece, composants or [], session),
     )

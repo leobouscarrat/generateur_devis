@@ -205,6 +205,9 @@ _PARAMETRES_DEFAUT: dict[str, Any] = {
     # Postes utilisés par le moteur de chiffrage (identifiants de la table postes)
     "poste_decoupe": "LASER_3KW",
     "poste_pliage": "PLIEUSE_CN",
+    # Opérations secondaires appliquées par le moteur de chiffrage (table operations)
+    "operation_ebavurage": "EBAVURAGE_P",
+    "operation_taraudage": "TARAUDAGE",
 }
 
 # ---------------------------------------------------------------------------

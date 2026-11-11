@@ -24,6 +24,7 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 
 from generateur_devis.data.acces import (
+    TRAITEMENT_ID_PAR_TYPE,
     get_matiere,
     get_parametre,
     get_traitement,
@@ -45,19 +46,6 @@ class Constat(BaseModel):
     """Message lisible, avec les valeurs ayant déclenché le constat."""
     champ: str | None = None
     """Champ concerné, ex. ``contours.trous[0]``."""
-
-
-# Correspondance structurelle entre le type lu sur le plan (schéma) et
-# l'identifiant du référentiel ``traitements`` (données simulées).
-_TRAITEMENT_PAR_TYPE: dict[str, str] = {
-    "peinture": "PEINTURE_POUDRE",
-    "thermolaquage": "PEINTURE_POUDRE",
-    "cataphorese": "CATAPHORESE",
-    "zingage": "ZINGAGE",
-    "galvanisation": "GALVA_CHAUD",
-    "anodisation": "ANODISATION",
-    "passivation": "PASSIVATION",
-}
 
 
 def _parse_format(format_mm: str) -> tuple[float, float]:
@@ -204,7 +192,7 @@ def evaluer_faisabilite(
     # --- Règle : traitement compatible avec la matière (alerte) ---------------
     type_traitement: TypeTraitement | None = piece.traitement.type.valeur
     if type_traitement not in (None, "aucun"):
-        traitement_id = _TRAITEMENT_PAR_TYPE.get(str(type_traitement))
+        traitement_id = TRAITEMENT_ID_PAR_TYPE.get(str(type_traitement))
         traitement = get_traitement(traitement_id, session) if traitement_id else None
         if traitement is not None and traitement.matieres_compatibles not in (None, "toutes"):
             compatibles = {f.strip() for f in traitement.matieres_compatibles.split(",")}
