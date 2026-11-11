@@ -221,6 +221,21 @@ def test_coercition_bool_chaine(session):
     assert ligne.en_stock is False
 
 
+def test_modele_extraction_parametre_administrable(session):
+    """Le modèle d'extraction est un paramètre base modifiable par l'agent."""
+    from generateur_devis.data.acces import get_parametre
+
+    assert get_parametre("modele_extraction", session) == "claude-code:sonnet"
+    proposition = PropositionAdmin(modifications=[ModificationAdmin(
+        type="mise_a_jour", table="parametres", ligne_id="modele_extraction",
+        champ="valeur", valeur="openrouter:modele-vision",
+        justification="bascule fournisseur",
+    )])
+    proposition.appliquer("direction", session)
+    session.commit()
+    assert get_parametre("modele_extraction", session) == "openrouter:modele-vision"
+
+
 def test_cle_composite(session):
     """Clé composite sérialisée ``matiere|epaisseur`` (epaisseurs_dispo)."""
     proposition = PropositionAdmin(modifications=[ModificationAdmin(
