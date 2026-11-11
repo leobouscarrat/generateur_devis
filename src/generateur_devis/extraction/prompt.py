@@ -100,6 +100,13 @@ Règles :
        * "soudures" : {"procede": "mig_mag"|"tig"|"points"|"autre"|"inconnu",
          "type_joint": "angle"|"bout_a_bout"|"bouchon"|"autre"|"inconnu",
          "quantite": entier} ;
+   - "modification_element" : corriger un élément EXISTANT d'une liste (ne pas
+     créer de doublon en ajoutant !) ; "chemin" vaut "liste[index]" (index à
+     partir de 0, listes modifiables : composants, contours.trous, contours.coins,
+     soudures, profil_pliage.elements) et "nouvelle_valeur" est un objet PARTIEL
+     contenant uniquement les champs à changer (les autres sont conservés).
+     Exemples : trou oblong mal lu → {"forme": "rond", "diametre": 0.1935,
+     "largeur": null, "longueur": null} ; pli vers le haut → {"sens": "haut"}.
    - "creation_section" : créer d'un bloc une section ABSENTE (null) de la fiche ;
      seule section créable : "profil_pliage" (chemin = "profil_pliage") ;
      "nouvelle_valeur" est l'objet complet {"cotation": "exterieure"|"interieure",

@@ -102,6 +102,77 @@ def test_ajout_element_invalide_rejete_a_l_application():
         proposition.appliquer(piece_support())
 
 
+def test_modification_element_trou_oblong_vers_rond():
+    """Cas réel : trou lu « oblong » (largeur 0.1935) → c'est un perçage rond Ø0.1935."""
+    piece = piece_support().model_copy(update={
+        "contours": Contours(trous=[Trou(forme="oblong", largeur=0.1935, quantite=4)])
+    })
+    proposition = PropositionCorrection(diffs=[DiffCorrection(
+        type="modification_element", chemin="contours.trous[0]",
+        nouvelle_valeur={"forme": "rond", "diametre": 0.1935, "largeur": None, "longueur": None},
+        justification="perçage #10",
+    )])
+    corrigee = proposition.appliquer(piece)
+    trou = corrigee.contours.trous[0]
+    assert trou.forme == "rond" and trou.diametre == 0.1935
+    assert trou.largeur is None and trou.quantite == 4  # quantité conservée
+    assert piece.contours.trous[0].forme == "oblong"  # l'originale est intacte
+
+
+def test_modification_element_sens_du_pli():
+    """Cas réel : le pli est vers le haut → sens « inconnu » → « haut »."""
+    piece = piece_support()
+    piece.profil_pliage.elements[1].sens = "inconnu"
+    proposition = PropositionCorrection(diffs=[DiffCorrection(
+        type="modification_element", chemin="profil_pliage.elements[1]",
+        nouvelle_valeur={"sens": "haut"},
+        justification="le pli est vers le haut",
+    )])
+    corrigee = proposition.appliquer(piece)
+    assert corrigee.profil_pliage.elements[1].sens == "haut"
+    assert corrigee.profil_pliage.elements[1].angle == 90.0  # conservé
+
+
+def test_modification_element_index_hors_liste_rejete_avant_affichage(monkeypatch):
+    _bouchon_modele(monkeypatch, {
+        "diffs": [
+            {"type": "modification_element", "chemin": "contours.trous[9]",
+             "nouvelle_valeur": {"forme": "rond"}, "justification": "?"}
+        ]
+    })
+    with pytest.raises(ErreurCorrection, match="hors de la liste"):
+        proposer_correction(piece_support(), "corrige le trou", "test")
+
+
+def test_modification_element_champ_inconnu_rejete():
+    proposition = PropositionCorrection(diffs=[DiffCorrection(
+        type="modification_element", chemin="contours.trous[0]",
+        nouvelle_valeur={"couleur": "rouge"}, justification="?",
+    )])
+    with pytest.raises(ErreurCorrection, match="inconnu"):
+        proposition.appliquer(piece_support())
+
+
+def test_modification_element_resultat_invalide_rejete():
+    """Fusion valide champ par champ mais élément résultant invalide (quantité 0)."""
+    proposition = PropositionCorrection(diffs=[DiffCorrection(
+        type="modification_element", chemin="contours.trous[0]",
+        nouvelle_valeur={"quantite": 0}, justification="?",
+    )])
+    with pytest.raises(ErreurCorrection, match="invalide"):
+        proposition.appliquer(piece_support())
+
+
+def test_modification_element_avant_apres_affiche_element_actuel():
+    proposition = PropositionCorrection(diffs=[DiffCorrection(
+        type="modification_element", chemin="profil_pliage.elements[1]",
+        nouvelle_valeur={"sens": "bas"}, justification="?",
+    )])
+    lignes = proposition.ligne_avant_apres(piece_support())
+    assert lignes[0][0] == "profil_pliage.elements[1]"
+    assert "haut" in lignes[0][1]  # l'élément actuel est affiché en « avant »
+
+
 def test_ajout_composant_reste_accepte():
     """Rétrocompatibilité : l'ancien type ajout_composant fonctionne toujours."""
     proposition = PropositionCorrection(diffs=[DiffCorrection(
