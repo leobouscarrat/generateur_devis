@@ -10,6 +10,7 @@ est dans ``ui.rendu3d``.
 
 from __future__ import annotations
 
+import math
 import os
 import uuid
 from datetime import date, datetime
@@ -375,6 +376,21 @@ def _afficher_constats(resultat: ResultatDevis) -> None:
 # ---------------------------------------------------------------------------
 
 
+def _nombre(valeur: object) -> float | None:
+    """Nombre lu d'une cellule de data_editor, ou None si vide/NaN.
+
+    ``st.data_editor`` renvoie ``NaN`` pour une cellule numérique vidée, et
+    ``NaN`` est truthy — il doit être traité comme une valeur absente.
+    """
+    if valeur is None or valeur == "":
+        return None
+    try:
+        nombre = float(valeur)
+    except (TypeError, ValueError):
+        return None
+    return None if math.isnan(nombre) else nombre
+
+
 def _valider_lignes(lignes_profil: list[dict], lignes_trous: list[dict]) -> list[str]:
     """Valide les lignes des data_editor — aucune suppression silencieuse.
 
@@ -394,27 +410,31 @@ def _valider_lignes(lignes_profil: list[dict], lignes_trous: list[dict]) -> list
             continue
         type_, longueur, angle, sens = (
             ligne.get("type"),
-            ligne.get("longueur"),
-            ligne.get("angle"),
+            _nombre(ligne.get("longueur")),
+            _nombre(ligne.get("angle")),
             ligne.get("sens"),
         )
         if type_ == "aile":
-            if not longueur or float(longueur) <= 0:
+            if longueur is None or longueur <= 0:
                 erreurs.append(f"Profil ligne {i} : aile sans longueur valide.")
         elif type_ == "pli":
-            if angle is None or angle == "":
+            if angle is None:
                 erreurs.append(f"Profil ligne {i} : pli sans angle.")
             if sens not in ("haut", "bas"):
                 erreurs.append(f"Profil ligne {i} : sens du pli « haut » ou « bas » attendu.")
         else:
             erreurs.append(f"Profil ligne {i} : type « aile » ou « pli » attendu, reçu {type_!r}.")
     for i, ligne in enumerate(lignes_trous, start=1):
-        remplie = any(v is not None and v != "" for v in ligne.values())
+        remplie = any(
+            (v is not None and v != "") and not (isinstance(v, float) and math.isnan(v))
+            for v in ligne.values()
+        )
         if not remplie:
             continue
-        if not ligne.get("diametre") or float(ligne["diametre"]) <= 0:
+        diametre, quantite = _nombre(ligne.get("diametre")), _nombre(ligne.get("quantite"))
+        if diametre is None or diametre <= 0:
             erreurs.append(f"Trou ligne {i} : diamètre manquant ou invalide.")
-        if not ligne.get("quantite") or int(ligne["quantite"]) < 1:
+        if quantite is None or quantite < 1:
             erreurs.append(f"Trou ligne {i} : quantité ≥ 1 attendue.")
     return erreurs
 

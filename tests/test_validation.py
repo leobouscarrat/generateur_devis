@@ -170,3 +170,25 @@ def test_valider_lignes_type_inconnu():
 def test_valider_lignes_trou_incomplet():
     erreurs = _valider_lignes([], [{"forme": "rond", "diametre": None, "quantite": 0}])
     assert len(erreurs) == 2  # diamètre manquant + quantité invalide
+
+
+def test_valider_lignes_nan_ne_plante_pas():
+    """Régression : une cellule vidée du data_editor vaut NaN (truthy) —
+    avant le correctif, int(NaN) levait ValueError et plantait l'écran."""
+    nan = float("nan")
+    erreurs = _valider_lignes(
+        [{"type": "aile", "longueur": nan, "angle": None, "sens": None}],
+        [{"forme": "rond", "diametre": nan, "quantite": nan}],
+    )
+    assert any("aile" in e for e in erreurs)
+    assert any("diamètre" in e for e in erreurs)
+    assert any("quantité" in e for e in erreurs)
+
+
+def test_valider_lignes_zero_est_invalide_mais_ne_plante_pas():
+    """Régression (cas utilisateur) : 0 saisi comme longueur → erreur lisible."""
+    erreurs = _valider_lignes(
+        [{"type": "aile", "longueur": 0.0, "angle": None, "sens": None}], []
+    )
+    assert len(erreurs) == 1
+    assert "aile" in erreurs[0]
