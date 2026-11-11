@@ -27,6 +27,7 @@ from generateur_devis.geometrie import (
     rayon_pli,
 )
 from generateur_devis.schema.piece import Aile, PieceExtraite, Pli
+from generateur_devis.ui.formatage import formater_valeur
 
 Point3D = tuple[float, float, float]
 
@@ -100,7 +101,8 @@ def construire_profil_2d(piece: PieceExtraite, facteur_k: float) -> list[Point2D
         if longueur <= 0:
             msg = (
                 f"Cotes contradictoires : segment {i} de longueur négative ou nulle "
-                f"({longueur:.2f} mm) après correction des plis."
+                f"({formater_valeur('longueur_mm', longueur)} mm) "
+                f"après correction des plis."
             )
             raise ErreurGeometrie(msg)
         longueurs.append(longueur)

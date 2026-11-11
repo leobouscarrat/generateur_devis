@@ -43,6 +43,7 @@ from generateur_devis.schema.piece import (
     ProfilPliage,
     Trou,
 )
+from generateur_devis.ui.formatage import formater_valeur
 from generateur_devis.ui.pipeline import ResultatDevis, orchestrer_devis, rechiffrer
 from generateur_devis.ui.rendu3d import maillage_vers_figure
 
@@ -190,8 +191,14 @@ def _ecran_restitution() -> None:
             [
                 {
                     "quantite": p.quantite,
-                    "prix_unitaire_eur": round(p.prix_unitaire_eur, 2),
-                    "prix_total_eur": round(p.prix_unitaire_eur * p.quantite, 2),
+                    "prix_unitaire_eur": float(
+                        formater_valeur("prix_unitaire_eur", p.prix_unitaire_eur)
+                    ),
+                    "prix_total_eur": float(
+                        formater_valeur(
+                            "prix_unitaire_eur", p.prix_unitaire_eur * p.quantite
+                        )
+                    ),
                 }
                 for p in devis.chiffrage.paliers
             ]
@@ -225,7 +232,7 @@ def _ecran_restitution() -> None:
     with st.expander("🔍 Vue interne — tracé du calcul"):
         st.write(
             f"Coût palier commandé ({devis.quantite_commandee}) : "
-            f"**{devis.palier_commande().cout_unitaire_eur:.2f} €** "
+            f"**{formater_valeur('cout_unitaire_eur', devis.palier_commande().cout_unitaire_eur)} €** "
             f"— marge {devis.marge:.0%}"
         )
         st.dataframe(
@@ -570,10 +577,12 @@ def ecran_validation() -> None:
                     {
                         "Quantité": [p.quantite for p in resultat.chiffrage.paliers],
                         "Coût unitaire (€)": [
-                            round(p.cout_unitaire_eur, 2) for p in resultat.chiffrage.paliers
+                            float(formater_valeur("cout_unitaire_eur", p.cout_unitaire_eur))
+                            for p in resultat.chiffrage.paliers
                         ],
                         "Prix unitaire (€)": [
-                            round(p.prix_unitaire_eur, 2) for p in resultat.chiffrage.paliers
+                            float(formater_valeur("prix_unitaire_eur", p.prix_unitaire_eur))
+                            for p in resultat.chiffrage.paliers
                         ],
                     }
                 )
