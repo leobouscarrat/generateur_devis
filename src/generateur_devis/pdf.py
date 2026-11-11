@@ -13,6 +13,7 @@ from datetime import timedelta
 from fpdf import FPDF
 
 from generateur_devis.devis import Devis
+from generateur_devis.ui.formatage import formater_valeur
 
 
 def _prix_unitaire_option(prix: float, minimum_lot_eur: float, quantite: int) -> float:
@@ -84,11 +85,16 @@ def generer_pdf_client(devis: Devis, validite_jours: int, conditions: str) -> by
     pdf.set_font("helvetica", "", 11)
     for palier in devis.chiffrage.paliers:
         pdf.cell(50, 8, f"{palier.quantite}", border=1)
-        pdf.cell(60, 8, f"{palier.prix_unitaire_eur:.2f} EUR", border=1)
         pdf.cell(
             60,
             8,
-            f"{palier.prix_unitaire_eur * palier.quantite:.2f} EUR",
+            f"{formater_valeur('prix_unitaire_eur', palier.prix_unitaire_eur)} EUR",
+            border=1,
+        )
+        pdf.cell(
+            60,
+            8,
+            f"{formater_valeur('prix_unitaire_eur', palier.prix_unitaire_eur * palier.quantite)} EUR",
             border=1,
             new_x="LMARGIN",
             new_y="NEXT",

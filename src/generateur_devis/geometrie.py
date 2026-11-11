@@ -27,6 +27,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict
 
 from generateur_devis.schema.piece import Aile, PieceExtraite, Pli, Trou
+from generateur_devis.ui.formatage import formater_valeur
 
 Point2D = tuple[float, float]
 
@@ -130,7 +131,8 @@ def longueur_developpee(piece: PieceExtraite, facteur_k: float) -> float:
     if developpe <= 0:
         msg = (
             f"Cotes contradictoires : longueur développée négative ou nulle "
-            f"({developpe:.2f} mm) à partir des ailes cotées {profil.cotation}."
+            f"({formater_valeur('longueur_mm', developpe)} mm) "
+            f"à partir des ailes cotées {profil.cotation}."
         )
         raise ErreurGeometrie(msg)
     return developpe
@@ -270,7 +272,8 @@ def construire_flan(
     surface_nette = surface_englobant - surface_trous + delta_surface_coins
     if surface_nette <= 0:
         msg = (
-            f"Surface nette négative ou nulle ({surface_nette:.2f} mm²) : "
+            f"Surface nette négative ou nulle "
+            f"({formater_valeur('surface_mm2', surface_nette)} mm²) : "
             "les découpes dépassent la surface du flan (cotes contradictoires)."
         )
         raise ErreurGeometrie(msg)

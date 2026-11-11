@@ -33,6 +33,7 @@ from generateur_devis.data.acces import get_bornes, get_parametre, list_historiq
 from generateur_devis.faisabilite import Constat
 from generateur_devis.geometrie import Flan
 from generateur_devis.schema.piece import PieceExtraite
+from generateur_devis.ui.formatage import formater_valeur
 
 
 def _alerte(regle: str, message: str, champ: str | None = None) -> Constat:
@@ -136,9 +137,11 @@ def evaluer_controles_prix(
                 constats.append(
                     _alerte(
                         "ecart_historique",
-                        f"Palier {palier.quantite} : coût {palier.cout_unitaire_eur:.2f} € "
+                        f"Palier {palier.quantite} : coût "
+                        f"{formater_valeur('cout_unitaire_eur', palier.cout_unitaire_eur)} € "
                         f"à {ecart:+.0f} % de la moyenne des {len(similaires)} devis "
-                        f"similaires ({moyenne:.2f} €) ({borne.message}).",
+                        f"similaires ({formater_valeur('cout_unitaire_eur', moyenne)} €) "
+                        f"({borne.message}).",
                         champ="paliers.cout_unitaire_eur",
                     )
                 )
