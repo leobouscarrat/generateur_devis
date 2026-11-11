@@ -40,16 +40,19 @@ def ecran_depot() -> ResultatDevis | None:
         matiere_id = None if matiere == "(à extraire)" else matiere
     with col2:
         saisie = st.text_input("Quantités (séparées par des virgules)", ", ".join(paliers))
+        quantites: list[int] | None = None
         try:
             quantites = [int(q.strip()) for q in saisie.split(",") if q.strip()]
             if not quantites or any(q <= 0 for q in quantites):
                 raise ValueError
         except ValueError:
             st.error("Quantités invalides : entiers positifs séparés par des virgules.")
-            return st.session_state.get(CLE_RESULTAT)
         nom_modele = st.text_input("Modèle d'extraction", os.environ.get("MODELE_EXTRACTION", ""))
 
-    if st.button("Lancer l'analyse", disabled=plan is None or not nom_modele):
+    if st.button(
+        "Lancer l'analyse",
+        disabled=plan is None or not nom_modele or quantites is None,
+    ):
         with st.spinner("Extraction et chiffrage en cours…"), get_session() as session:
             resultat = orchestrer_devis(
                 plan.read(),
