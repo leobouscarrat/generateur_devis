@@ -86,6 +86,23 @@ Niveaux du jeu tôlerie : 0 PDF propre, 1 image propre, 2 scan, 3 photo.
 
 Les jeux publics sont téléchargés automatiquement dans `data/raw/`. Les résultats détaillés sont écrits dans `results/runs/`.
 
+### Administration des référentiels
+
+```bash
+uv run streamlit run src/generateur_devis/ui/admin.py
+```
+
+L'écran exige une connexion (démonstration — ce n'est **pas une sécurité réelle**, le code côté client reste lisible). Les comptes se déclarent dans `.streamlit/secrets.toml` (gitignoré) :
+
+```toml
+[admin.utilisateurs]
+acheteur = "prix2026"
+methodes = "temps2026"
+direction = "pilotage2026"
+```
+
+Le nom de connexion devient l'auteur de chaque modification (audit daté et attribué, visible en bas de l'écran).
+
 ## Structure du dépôt
 
 ```

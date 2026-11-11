@@ -23,21 +23,63 @@ from generateur_devis.admin_agent import (
 )
 from generateur_devis.data.audit import historique
 from generateur_devis.data.db import get_session
+from generateur_devis.ui.auth import verifier_identifiants
 
 CLE_PROPOSITION_ADMIN = "proposition_admin"
+CLE_AUTEUR = "admin_auteur"
+
+
+def _comptes() -> dict[str, str]:
+    """Comptes déclarés dans les secrets : ``[admin.utilisateurs]`` nom = mdp."""
+    return dict(st.secrets.get("admin", {}).get("utilisateurs", {}))
+
+
+def _ecran_connexion() -> bool:
+    """Porte de connexion (démo — pas une sécurité réelle).
+
+    Returns:
+        True si connecté ; le nom de connexion est en
+        ``session_state[CLE_AUTEUR]`` et devient l'auteur de l'audit.
+    """
+    if st.session_state.get(CLE_AUTEUR):
+        return True
+    comptes = _comptes()
+    if not comptes:
+        st.error(
+            "Aucun compte configuré — déclarez les utilisateurs dans "
+            "`.streamlit/secrets.toml` (voir README § Administration)."
+        )
+        return False
+    st.title("Connexion — Administration")
+    with st.form("connexion"):
+        nom = st.text_input("Nom")
+        mot_de_passe = st.text_input("Mot de passe", type="password")
+        if st.form_submit_button("Se connecter"):
+            if verifier_identifiants(nom, mot_de_passe, comptes):
+                st.session_state[CLE_AUTEUR] = nom
+                st.rerun()
+            else:
+                st.error("Identifiants incorrects.")
+    return False
 
 
 def main() -> None:
+    if not _ecran_connexion():
+        return
+    auteur = st.session_state[CLE_AUTEUR]
+
     st.title("Administration des référentiels")
     st.caption(
-        "Décrivez la mise à jour en texte libre — l'agent propose un diff, "
-        "vous validez explicitement. Toute modification est datée et attribuée."
+        f"Connecté : **{auteur}** — décrivez la mise à jour en texte libre, "
+        "l'agent propose un diff, vous validez explicitement. "
+        "Toute modification est datée et attribuée."
     )
+    if st.button("Se déconnecter"):
+        st.session_state.pop(CLE_AUTEUR, None)
+        st.session_state.pop(CLE_PROPOSITION_ADMIN, None)
+        st.rerun()
 
-    auteur = st.text_input("Votre nom (obligatoire — chaque modification est attribuée)")
-    nom_modele = st.text_input(
-        "Modèle de l'agent", os.environ.get("MODELE_EXTRACTION", "")
-    )
+    nom_modele = st.text_input("Modèle de l'agent", os.environ.get("MODELE_EXTRACTION", ""))
 
     proposition: PropositionAdmin | None = st.session_state.get(CLE_PROPOSITION_ADMIN)
 
@@ -49,7 +91,7 @@ def main() -> None:
         )
         if st.button(
             "Proposer la modification",
-            disabled=not auteur or not nom_modele or not texte.strip(),
+            disabled=not nom_modele or not texte.strip(),
         ):
             try:
                 with st.spinner("L'agent analyse la demande…"), get_session() as session:
