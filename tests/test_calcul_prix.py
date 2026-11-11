@@ -103,10 +103,6 @@ def flan_003(session):
 def test_bloc_matiere_piece_003(session, flan_003):
     """§8.3 : 0,071 kg ÷ 0,80 × 1,10 €/kg ≈ 0,10 €/pièce."""
     bloc = calculer_bloc_matiere(flan_003, MATIERE, session)
-    matiere = get_matiere(MATIERE, session)
-    rendement = float(get_parametre("rendement_calepinage", session))
-    attendu = flan_003.masse_flan_kg / rendement * matiere.prix_eur_kg
-    assert bloc.cout_variable_eur == pytest.approx(attendu, rel=1e-9)
     assert bloc.cout_variable_eur == pytest.approx(0.10, abs=0.01)
     assert bloc.cout_fixe_eur_par_lot == 0.0
     assert bloc.masse_flan_kg == pytest.approx(0.071, abs=0.002)

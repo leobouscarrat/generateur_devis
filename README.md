@@ -141,5 +141,5 @@ Le projet est découpé en deux parties.
 - [x] Architecture ([docs/architecture.md](docs/architecture.md)) et stack : Python, Streamlit, OpenRouter
 - [x] Création des données simulées
 - [x] Extraction, géométrie et faisabilité
-- [ ] Moteur de calcul des coûts
+- [x] Moteur de calcul des coûts
 - [ ] Interface et génération du devis
