@@ -431,9 +431,25 @@ def _valider_lignes(lignes_profil: list[dict], lignes_trous: list[dict]) -> list
         )
         if not remplie:
             continue
+        forme = ligne.get("forme") or "rond"
         diametre, quantite = _nombre(ligne.get("diametre")), _nombre(ligne.get("quantite"))
-        if diametre is None or diametre <= 0:
-            erreurs.append(f"Trou ligne {i} : diamètre manquant ou invalide.")
+        longueur, largeur = _nombre(ligne.get("longueur")), _nombre(ligne.get("largeur"))
+        if forme == "rond":
+            if diametre is None or diametre <= 0:
+                erreurs.append(f"Trou ligne {i} : diamètre manquant ou invalide.")
+        elif forme in ("oblong", "carre", "rectangulaire"):
+            if longueur is None or longueur <= 0 or largeur is None or largeur <= 0:
+                erreurs.append(
+                    f"Trou ligne {i} : longueur et largeur requises pour un trou {forme}."
+                )
+            elif forme == "oblong" and longueur <= largeur:
+                erreurs.append(
+                    f"Trou ligne {i} : un trou oblong attend longueur > largeur."
+                )
+        else:  # « autre » : aire indéterminable, le calcul le refuserait plus loin
+            erreurs.append(
+                f"Trou ligne {i} : forme « autre » non chiffrable — préciser la forme."
+            )
         if quantite is None or quantite < 1:
             erreurs.append(f"Trou ligne {i} : quantité ≥ 1 attendue.")
     return erreurs
@@ -518,14 +534,20 @@ def _editer_piece(
         key="editeur_profil",
     )
 
-    st.caption("Trous")
+    st.caption("Trous (rond : diamètre ; oblong/carré/rectangulaire : longueur × largeur)")
     tableau_trous = st.data_editor(
         pd.DataFrame(
             [
-                {"forme": t.forme, "diametre": t.diametre, "quantite": t.quantite}
+                {
+                    "forme": t.forme,
+                    "diametre": t.diametre,
+                    "longueur": t.longueur,
+                    "largeur": t.largeur,
+                    "quantite": t.quantite,
+                }
                 for t in piece.contours.trous
             ],
-            columns=["forme", "diametre", "quantite"],
+            columns=["forme", "diametre", "longueur", "largeur", "quantite"],
         ),
         num_rows="dynamic",
         key="editeur_trous",
@@ -548,8 +570,10 @@ def _editer_piece(
     trous = [
         Trou(
             forme=ligne["forme"] or "rond",
-            diametre=float(ligne["diametre"]),
-            quantite=int(ligne["quantite"]),
+            diametre=_nombre(ligne.get("diametre")),
+            longueur=_nombre(ligne.get("longueur")),
+            largeur=_nombre(ligne.get("largeur")),
+            quantite=int(_nombre(ligne.get("quantite")) or 1),
         )
         for ligne in lignes_trous_editees
         if any(v is not None and v != "" for v in ligne.values())
