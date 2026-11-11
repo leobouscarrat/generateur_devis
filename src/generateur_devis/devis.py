@@ -17,7 +17,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 from sqlalchemy.orm import Session
 
 from generateur_devis.calcul_prix import BlocFinition, Chiffrage
@@ -55,6 +55,8 @@ class Devis(BaseModel):
     matiere_id: str
     piece_validee: PieceExtraite
     chiffrage: Chiffrage
+    flan: Flan
+    """Flan de `piece_validee` (issu du même `rechiffrer` que `chiffrage`), figé à la validation."""
     marge: float
     options: list[BlocFinition] = []
     """Options chiffrées à part (V1 : finition, ex. peinture proposée)."""
@@ -65,6 +67,27 @@ class Devis(BaseModel):
     date_creation: datetime
     modifications: list[Modification] = []
     date_emission: datetime | None = None
+
+    @model_validator(mode="after")
+    def _flan_coherent(self) -> Devis:
+        """Garde-fou « flan d'une autre pièce » (issue #54).
+
+        Comparaison exacte légitime : `construire_flan` recopie l'épaisseur et
+        la largeur de la pièce telles quelles. Ni le développé ni la densité ne
+        sont re-vérifiés (il faudrait le facteur K et la base).
+        """
+        mesures = (
+            ("épaisseur", self.flan.epaisseur_mm, self.piece_validee.matiere.epaisseur.valeur),
+            ("largeur", self.flan.largeur_mm, self.piece_validee.encombrement.largeur.valeur),
+        )
+        for nom, valeur_flan, valeur_piece in mesures:
+            if valeur_flan != valeur_piece:
+                piece_mm = "absente" if valeur_piece is None else f"{valeur_piece:g} mm"
+                msg = (
+                    f"Flan incohérent avec la pièce validée : {nom} {valeur_flan:g} mm ≠ {piece_mm}"
+                )
+                raise ValueError(msg)
+        return self
 
     def palier_commande(self):
         """Le palier à la quantité commandée (ErreurDevis si absent)."""
@@ -110,14 +133,14 @@ class Devis(BaseModel):
             palier.prix_unitaire_eur = palier.cout_unitaire_eur / (1.0 - marge)
 
 
-def emettre(devis: Devis, flan: Flan, auteur: str, session: Session) -> HistoriqueDevis:
+def emettre(devis: Devis, auteur: str, session: Session) -> HistoriqueDevis:
     """Émet le devis : statut « emis » + ligne `historique_devis`.
+
+    Les dimensions de la ligne historique viennent de `devis.flan`, le flan
+    de la pièce validée figé à la validation (jamais celui du dépôt).
 
     Args:
         devis: devis validé (la validation est un prérequis de l'émission).
-        flan: flan de la pièce (dimensions de la ligne historique) — les
-            mesures géométriques sont déterministes, seuls les prix sont
-            figés ; le flan est fourni par l'appelant.
         auteur: auteur de l'émission.
         session: session SQLAlchemy (la ligne est ajoutée, non commitée).
 
@@ -134,6 +157,7 @@ def emettre(devis: Devis, flan: Flan, auteur: str, session: Session) -> Historiq
         raise ErreurDevis(msg)
     palier = devis.palier_commande()
     piece = devis.piece_validee
+    flan = devis.flan
     nb_plis = piece.profil_pliage.nb_plis if piece.profil_pliage else 0
     nb_trous = sum(t.quantite for t in piece.contours.trous)
     nb_composants = sum(c.quantite for c in piece.composants)

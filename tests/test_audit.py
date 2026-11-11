@@ -117,12 +117,13 @@ def test_emission_devis_ne_cree_pas_d_audit(session):
         matiere_id="S235JR",
         piece_validee=piece,
         chiffrage=resultat.chiffrage,
+        flan=resultat.flan,
         marge=0.25,
         quantite_commandee=100,
         date_creation=datetime(2026, 11, 11),
     )
     devis.valider("testeur")
-    emettre(devis, resultat.flan, "testeur", session)
+    emettre(devis, "testeur", session)
     session.commit()
     nb = session.scalar(select(func.count()).select_from(ModificationReferentiel))
     assert nb == 0

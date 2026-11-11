@@ -16,9 +16,11 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from generateur_devis.calcul_prix import BlocFinition, chiffrer
+from generateur_devis.data.acces import get_matiere, get_parametre
 from generateur_devis.data.seed import seed
 from generateur_devis.data.tables import Base
 from generateur_devis.devis import Devis
+from generateur_devis.geometrie import construire_flan
 from generateur_devis.pdf import generer_pdf_client
 from generateur_devis.schema.piece import (
     Aile,
@@ -71,6 +73,11 @@ def devis_test(session) -> Devis:
         matiere_id="S235JR",
         piece_validee=piece,
         chiffrage=chiffrer(piece, "S235JR", session, quantites=[1, 100]),
+        flan=construire_flan(
+            piece,
+            get_matiere("S235JR", session).densite_kg_dm3,
+            float(get_parametre("facteur_k", session)),
+        ),
         marge=0.25,
         quantite_commandee=100,
         statut="valide",
