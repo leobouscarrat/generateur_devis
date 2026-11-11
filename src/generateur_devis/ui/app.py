@@ -306,15 +306,17 @@ def ecran_depot() -> ResultatDevis | None:
     plan = st.file_uploader("Plan (PDF ou image)", type=TYPES_PLAN)
     with get_session() as session:
         choix_clients = {c.nom: c.id for c in list_clients(session)}
-        matieres = [m.id for m in list_matieres(session)]
+        choix_matieres = _choix_matieres(session)
         paliers = [str(q) for q in get_parametre("paliers_quantite", session)]
 
     col1, col2 = st.columns(2)
     with col1:
         nom_client = st.selectbox("Client", ["(sans)"] + list(choix_clients))
         client_id = choix_clients.get(nom_client)
-        matiere = st.selectbox("Matière (si absente du plan)", ["(à extraire)"] + matieres)
-        matiere_id = None if matiere == "(à extraire)" else matiere
+        matiere = st.selectbox(
+            "Matière (si absente du plan)", ["(à extraire)"] + list(choix_matieres)
+        )
+        matiere_id = None if matiere == "(à extraire)" else choix_matieres[matiere]
     with col2:
         saisie = st.text_input("Quantités (séparées par des virgules)", ", ".join(paliers))
         quantites: list[int] | None = None
@@ -416,8 +418,15 @@ def _valider_lignes(lignes_profil: list[dict], lignes_trous: list[dict]) -> list
     return erreurs
 
 
+def _choix_matieres(session) -> dict[str, str]:
+    """Libellés lisibles → identifiants : « S235JR — acier (EN 10025) »."""
+    return {
+        f"{m.id} — {m.famille} ({m.norme})": m.id for m in list_matieres(session)
+    }
+
+
 def _editer_piece(
-    piece: PieceExtraite, matieres: list[str]
+    piece: PieceExtraite, choix_matieres: dict[str, str]
 ) -> tuple[PieceExtraite | None, str, list[str]]:
     """Formulaire borné V1 : matière, épaisseur, largeur, profil de pliage, trous.
 
@@ -430,8 +439,10 @@ def _editer_piece(
     col1, col2, col3 = st.columns(3)
     with col1:
         matiere_defaut = piece.matiere.designation.valeur
-        index = matieres.index(matiere_defaut) if matiere_defaut in matieres else 0
-        matiere_id = st.selectbox("Matière", matieres, index=index)
+        libelles = list(choix_matieres)
+        ids = list(choix_matieres.values())
+        index = ids.index(matiere_defaut) if matiere_defaut in ids else 0
+        matiere_id = choix_matieres[st.selectbox("Matière", libelles, index=index)]
     with col2:
         epaisseur = st.number_input(
             "Épaisseur (mm)",
@@ -536,12 +547,12 @@ def ecran_validation() -> None:
     _ecran_assistant(piece)
 
     with get_session() as session:
-        matieres = [m.id for m in list_matieres(session)]
+        choix_matieres = _choix_matieres(session)
         traitements = sorted(
             {tid for tid in TRAITEMENT_ID_PAR_TYPE.values() if get_traitement(tid, session)}
         )
 
-        editee, matiere_id, erreurs_saisie = _editer_piece(piece, matieres)
+        editee, matiere_id, erreurs_saisie = _editer_piece(piece, choix_matieres)
         if editee is None:
             for erreur in erreurs_saisie:
                 st.error(f"⛔ Saisie incomplète — {erreur}")

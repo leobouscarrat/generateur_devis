@@ -158,19 +158,22 @@ def test_c7_matiere_modifiable_sur_ecran_validation(session, monkeypatch):
     list_matieres, couvrant le cas « matière absente du plan » de 4.2."""
     piece = piece_support(MATIERE)
 
-    # Récupère la liste des matières en base
+    # Récupère la liste des matières en base (libellés lisibles → ids)
     with session as s:
-        matieres = [m.id for m in list_matieres(s)]
-        assert len(matieres) > 0, "Il doit y avoir au moins une matière en base"
+        choix = {
+            f"{m.id} — {m.famille} ({m.norme})": m.id for m in list_matieres(s)
+        }
+        assert len(choix) > 0, "Il doit y avoir au moins une matière en base"
+        ids = list(choix.values())
 
     # Teste que _editer_piece accepte une matière différente de la défaut
-    piece_modifiee, matiere_choisie, erreurs = _editer_piece(piece, matieres)
+    piece_modifiee, matiere_choisie, erreurs = _editer_piece(piece, choix)
 
     # Vérifie que la matière a bien été modifiée
     assert erreurs == [], "Pas d'erreur de saisie sur le formulaire initial"
     assert piece_modifiee is not None
-    assert matiere_choisie in matieres, "La matière choisie doit être dans la liste disponible"
-    assert piece_modifiee.matiere.designation.valeur in matieres, \
+    assert matiere_choisie in ids, "La matière choisie doit être dans la liste disponible"
+    assert piece_modifiee.matiere.designation.valeur in ids, \
         "La pièce modifiée doit avoir une matière de la liste"
 
 
