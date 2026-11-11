@@ -120,32 +120,51 @@ def orchestrer_devis(
         matiere = _resoudre_matiere(piece, matiere_id, session)
     except ErreurPipeline as e:
         return ResultatDevis(piece=piece, erreur=str(e))
-
-    # --- Géométrie + faisabilité (dès que l'épaisseur est connue) ----------
     if matiere is None:
         return ResultatDevis(piece=piece, matiere_id=None, erreur=None)
-    matiere_ref = get_matiere(matiere, session)
-    assert matiere_ref is not None  # garanti par _resoudre_matiere
+
+    return rechiffrer(piece, matiere, client_id, quantites, session)
+
+
+def rechiffrer(
+    piece: PieceExtraite,
+    matiere_id: str,
+    client_id: str | None,
+    quantites: list[int] | None,
+    session: Session,
+) -> ResultatDevis:
+    """Rechiffre une pièce modifiée sans repasser par l'extraction (issue #24).
+
+    Étapes géométrie → faisabilité → chiffrage → contrôles, déterministes et
+    sans appel IA : appelée à chaque modification du formulaire de validation
+    (moins d'une seconde, architecture §4). Mêmes règles que le pipeline :
+    blocage faisabilité → pas de chiffrage ; erreurs métier → ``erreur``
+    lisible.
+    """
+    matiere_ref = get_matiere(matiere_id, session)
+    if matiere_ref is None:
+        return ResultatDevis(
+            piece=piece, matiere_id=matiere_id, erreur=f"Matière inconnue : {matiere_id}."
+        )
     facteur_k = float(get_parametre("facteur_k", session))
     try:
         flan = construire_flan(piece, matiere_ref.densite_kg_dm3, facteur_k)
     except ErreurGeometrie as e:
-        return ResultatDevis(piece=piece, matiere_id=matiere, erreur=str(e))
+        return ResultatDevis(piece=piece, matiere_id=matiere_id, erreur=str(e))
 
-    constats = evaluer_faisabilite(piece, matiere, session)
-    resultat = ResultatDevis(piece=piece, flan=flan, matiere_id=matiere, constats=constats)
+    constats = evaluer_faisabilite(piece, matiere_id, session)
+    resultat = ResultatDevis(piece=piece, flan=flan, matiere_id=matiere_id, constats=constats)
     if resultat.bloque:
         return resultat
 
-    # --- Chiffrage provisoire + contrôles -----------------------------------
     try:
         resultat.chiffrage = chiffrer(
-            piece, matiere, session, quantites=quantites, client_id=client_id
+            piece, matiere_id, session, quantites=quantites, client_id=client_id
         )
     except ErreurChiffrage as e:
         resultat.erreur = str(e)
         return resultat
     resultat.alertes_controles = evaluer_controles_prix(
-        resultat.chiffrage, piece, flan, matiere, session
+        resultat.chiffrage, piece, flan, matiere_id, session
     )
     return resultat
