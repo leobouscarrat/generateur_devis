@@ -9,6 +9,7 @@ from __future__ import annotations
 from datetime import datetime
 
 import pytest
+from pydantic import ValidationError
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -31,16 +32,20 @@ from generateur_devis.schema.piece import (
     ProfilPliage,
     Trou,
 )
+from generateur_devis.ui.pipeline import ResultatDevis, rechiffrer
 
 MATIERE = "S235JR"
 FACTEUR_K = 0.40
 
 
-def piece_003() -> PieceExtraite:
-    """Le « SUPPORT » du §8 : Z, 2 plis 90°, R 2 mm, cotes extérieures."""
+def piece_003(largeur: float = 60.0, epaisseur: float = 2.0) -> PieceExtraite:
+    """Le « SUPPORT » du §8 : Z, 2 plis 90°, R 2 mm, cotes extérieures.
+
+    Matière non désignée (cas réel de l'issue #54 : non lue sur le plan).
+    """
     return PieceExtraite(
-        matiere=Matiere(epaisseur=Champ[float](valeur=2.0)),
-        encombrement=Encombrement(largeur=Champ[float](valeur=60.0)),
+        matiere=Matiere(epaisseur=Champ[float](valeur=epaisseur)),
+        encombrement=Encombrement(largeur=Champ[float](valeur=largeur)),
         profil_pliage=ProfilPliage(
             cotation="exterieure",
             rayon_pliage_general=2.0,
@@ -93,6 +98,7 @@ def devis_003(session, flan_003):
         matiere_id=MATIERE,
         piece_validee=piece_003(),
         chiffrage=chiffrage,
+        flan=flan_003,
         marge=0.25,
         options=[option] if option else [],
         quantite_commandee=100,
@@ -165,7 +171,7 @@ def test_roundtrip_json(devis_003):
 
 
 def test_emission_vers_historique(session, devis_003, flan_003):
-    ligne = emettre(devis_003, flan_003, "charge_affaires", session)
+    ligne = emettre(devis_003, "charge_affaires", session)
     session.flush()
     assert devis_003.statut == "emis"
     assert devis_003.date_emission is not None
@@ -189,25 +195,115 @@ def test_emission_exige_validation(session, flan_003):
         matiere_id=MATIERE,
         piece_validee=piece_003(),
         chiffrage=chiffrage,
+        flan=flan_003,
         marge=0.25,
         quantite_commandee=100,
         date_creation=datetime.now(),
     )
     with pytest.raises(ErreurDevis, match="validé avant émission"):
-        emettre(devis, flan_003, "charge_affaires", session)
+        emettre(devis, "charge_affaires", session)
 
 
-def test_devis_emis_en_lecture_seule(devis_003, flan_003, session):
-    emettre(devis_003, flan_003, "charge_affaires", session)
+def test_devis_emis_en_lecture_seule(devis_003, session):
+    emettre(devis_003, "charge_affaires", session)
     with pytest.raises(ErreurDevis, match="plus modifiable"):
         devis_003.changer_marge("charge_affaires", 0.30)
     with pytest.raises(ErreurDevis, match="plus modifiable"):
         devis_003.valider("charge_affaires")
     with pytest.raises(ErreurDevis, match="plus modifiable"):
-        emettre(devis_003, flan_003, "charge_affaires", session)
+        emettre(devis_003, "charge_affaires", session)
 
 
 def test_palier_commande_absent(devis_003):
     devis_003.quantite_commandee = 42
     with pytest.raises(ErreurDevis, match="Aucun palier"):
         devis_003.palier_commande()
+
+
+# ---------------------------------------------------------------------------
+# Issue #54 : le devis porte le flan de la pièce validée
+# ---------------------------------------------------------------------------
+
+
+def _devis(piece: PieceExtraite, chiffrage, flan) -> Devis:
+    return Devis(
+        id="D-2026-0054",
+        matiere_id=MATIERE,
+        piece_validee=piece,
+        chiffrage=chiffrage,
+        flan=flan,
+        marge=0.25,
+        quantite_commandee=100,
+        date_creation=datetime.now(),
+    )
+
+
+def test_emission_matiere_absente_du_depot(session):
+    """Cas de l'issue : matière non lue au dépôt → flan initial absent ;
+    la matière choisie à la validation suffit à émettre."""
+    depot = ResultatDevis(piece=piece_003(), matiere_id=None)
+    assert depot.flan is None  # c'est ce flan que l'émission relisait
+
+    resultat = rechiffrer(piece_003(), MATIERE, None, [100], session)
+    devis = _devis(piece_003(), resultat.chiffrage, resultat.flan)
+    devis.valider("testeur")
+    ligne = emettre(devis, "testeur", session)
+    session.flush()
+
+    assert devis.statut == "emis"
+    # §8 : flan 74,8 × 60 mm, e = 2 mm ; masse = 74,8 × 60 × 2 × 7,85e-6 ≈ 0,0705 kg.
+    assert ligne.flan_w_mm == pytest.approx(60.0)
+    assert ligne.flan_l_mm == pytest.approx(74.8, abs=0.1)
+    assert ligne.epaisseur_mm == pytest.approx(2.0)
+    assert ligne.masse_kg == pytest.approx(0.0705, abs=0.001)
+
+
+def test_emission_flan_piece_corrigee(session):
+    """Largeur corrigée 60 → 80 à la validation : la ligne émise suit la pièce validée."""
+    matiere = get_matiere(MATIERE, session)
+    flan_initial = construire_flan(piece_003(), matiere.densite_kg_dm3, FACTEUR_K)
+    assert flan_initial.largeur_mm == pytest.approx(60.0)
+
+    piece_80 = piece_003(largeur=80.0)
+    resultat = rechiffrer(piece_80, MATIERE, None, [100], session)
+
+    # Reproduction exacte du défaut : flan initial + pièce validée → refusé.
+    with pytest.raises(ValidationError, match="Flan incohérent"):
+        _devis(piece_80, resultat.chiffrage, flan_initial)
+
+    devis = _devis(piece_80, resultat.chiffrage, resultat.flan)
+    devis.valider("testeur")
+    ligne = emettre(devis, "testeur", session)
+    assert ligne.flan_w_mm == pytest.approx(80.0)
+    # Masse au rectangle englobant : 74,8 × 80 × 2 × 7,85e-6 ≈ 0,0939 kg.
+    assert ligne.masse_kg == pytest.approx(0.0939, abs=0.001)
+
+
+def test_flan_incoherent_epaisseur(session):
+    """Pièce validée à 3 mm, flan calculé à 2 mm → ValidationError explicite."""
+    matiere = get_matiere(MATIERE, session)
+    flan_2mm = construire_flan(piece_003(), matiere.densite_kg_dm3, FACTEUR_K)
+    piece_3mm = piece_003(epaisseur=3.0)
+    chiffrage = chiffrer(piece_3mm, MATIERE, session)
+    with pytest.raises(ValidationError, match="Flan incohérent.*épaisseur"):
+        _devis(piece_3mm, chiffrage, flan_2mm)
+
+
+def test_devis_sans_flan_refuse(session):
+    """Le flan est obligatoire : un Devis sans flan ne peut pas exister."""
+    chiffrage = chiffrer(piece_003(), MATIERE, session)
+    with pytest.raises(ValidationError, match="flan"):
+        Devis(
+            id="D-2026-0055",
+            matiere_id=MATIERE,
+            piece_validee=piece_003(),
+            chiffrage=chiffrage,
+            marge=0.25,
+            quantite_commandee=100,
+            date_creation=datetime.now(),
+        )
+
+
+def test_roundtrip_json_conserve_le_flan(devis_003, flan_003):
+    clone = Devis.model_validate_json(devis_003.model_dump_json())
+    assert clone.flan == flan_003

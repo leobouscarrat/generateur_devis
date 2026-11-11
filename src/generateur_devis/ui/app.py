@@ -22,6 +22,7 @@ import pandas as pd
 import streamlit as st
 
 from generateur_devis.calcul_prix import calculer_bloc_finition
+from generateur_devis.controles_prix import evaluer_controles_prix
 from generateur_devis.data.acces import (
     TRAITEMENT_ID_PAR_TYPE,
     get_client,
@@ -308,10 +309,14 @@ def _ecran_restitution() -> None:
                 st.rerun()
 
     # --- Vue interne : alertes (contrôles prix, comparaison historique) ----------
-    resultat_initial: ResultatDevis | None = st.session_state.get(CLE_RESULTAT)
-    if resultat_initial:
-        for alerte in resultat_initial.alertes_controles:
-            st.warning(f"⚖️ Contrôle prix ({alerte.regle}) : {alerte.message}")
+    # Recalculées depuis le Devis (pièce, flan, matière validés, marge courante),
+    # jamais lues sur le résultat du dépôt (issue #54).
+    with get_session() as session_alertes:
+        alertes = evaluer_controles_prix(
+            devis.chiffrage, devis.piece_validee, devis.flan, devis.matiere_id, session_alertes
+        )
+    for alerte in alertes:
+        st.warning(f"⚖️ Contrôle prix ({alerte.regle}) : {alerte.message}")
 
     # --- Vue interne : tracé complet ---------------------------------------------
     with st.expander("🔍 Vue interne — tracé du calcul"):
@@ -334,12 +339,8 @@ def _ecran_restitution() -> None:
     # --- Émission : historique + PDF client ---------------------------------------
     if not lecture_seule:
         if st.button("📤 Émettre le devis", type="primary"):
-            resultat: ResultatDevis | None = st.session_state.get(CLE_RESULTAT)
-            if resultat is None or resultat.flan is None:
-                st.error("Flan introuvable — réanalysez le plan avant émission.")
-                return
             with get_session() as session:
-                emettre(devis, resultat.flan, devis.auteur or "inconnu", session)
+                emettre(devis, devis.auteur or "inconnu", session)
                 session.commit()
             st.session_state["pdf_client"] = generer_pdf_client(
                 devis,
@@ -874,6 +875,7 @@ def ecran_validation() -> None:
                 matiere_id=matiere_id,
                 piece_validee=editee,
                 chiffrage=resultat.chiffrage,
+                flan=resultat.flan,
                 marge=marge,
                 options=[option] if option else [],
                 quantite_commandee=quantite_commandee,
