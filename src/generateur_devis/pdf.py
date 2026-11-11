@@ -26,8 +26,9 @@ def _ligne(pdf: FPDF, libelle: str, valeur: str) -> None:
     pdf.cell(60, 7, libelle)
     pdf.set_font("helvetica", "", 11)
     # multi_cell part de la position courante (après le libellé) et coupe la
-    # valeur sur plusieurs lignes si elle déborde de la page.
-    pdf.multi_cell(0, 7, valeur)
+    # valeur sur plusieurs lignes si elle déborde de la page ; new_x/y
+    # explicites : le curseur revient à la marge gauche pour la ligne suivante.
+    pdf.multi_cell(0, 7, valeur, new_x="LMARGIN", new_y="NEXT")
 
 
 def generer_pdf_client(devis: Devis, validite_jours: int, conditions: str) -> bytes:
