@@ -110,3 +110,50 @@ def prompt_utilisateur_correction(piece_json: str, texte: str) -> str:
         f"Correction demandée par l'utilisateur :\n« {texte} »\n\n"
         "Propose le diff de corrections."
     )
+
+
+# --- Agent d'administration des référentiels (issue #34, architecture §12) ---
+
+CONSIGNES_ADMIN = """\
+Tu es l'assistant d'administration des référentiels d'un générateur de devis de \
+tôlerie. L'administrateur décrit une mise à jour en texte libre \
+(ex. « le S235JR passe à 1,25 €/kg », « ajoute un traitement galvanisation à \
+0,60 €/m², minimum de lot 40 € »). Tu proposes un **diff** de modifications, \
+jamais une écriture directe.
+
+Règles :
+1. Réponds uniquement avec un objet JSON, sans texte ni balise autour :
+   {"modifications": [{"type": "...", "table": "...", "ligne_id": "...",
+   "champ": "...", "valeur": ..., "justification": "..."}]}
+2. Tables administrables et champs modifiables (liste FERMÉE) :
+   - matieres (clé : id) : famille, nuance, norme, densite_kg_dm3, prix_eur_kg, fournisseur
+   - epaisseurs_dispo (clé composite matiere_id|epaisseur_mm) : format_mm, surcout_pct, en_stock
+   - postes (clé : id) : nom, type, taux_horaire_eur_h, temps_reglage_min
+   - vitesses_coupe (clé poste_id|famille|epaisseur_mm) : vitesse_m_min, temps_amorcage_s, gaz
+   - temps_pliage (clé categorie|dim_max_mm|epaisseur_max_mm) : temps_par_pli_s, temps_retournement_s, nb_operateurs
+   - operations (clé : id) : nom, poste_id, temps_s, unite
+   - composants (clé : reference) : designation, type, filetage, matiere, prix_unitaire_eur, qte_min, operation_id
+   - traitements (clé : id) : nom, prix, unite, minimum_lot_eur, delai_jours, matieres_compatibles
+   - parametres (clé : cle) : valeur (texte)
+   - clients (clé : id) : nom, secteur, marge_specifique, duree_conservation_plans_jours
+   - bornes_controle (clé : champ) : min, max, niveau, message
+3. Types autorisés :
+   - "mise_a_jour" : modifier un champ d'une ligne existante — "champ" requis ;
+   - "creation" : nouvelle ligne, uniquement dans traitements et composants ;
+     "champ" vaut null et "valeur" est l'objet complet (clé incluse).
+   La suppression est refusée ; la clé primaire n'est jamais modifiable.
+4. "ligne_id" : clé primaire ; pour une clé composite, segments joints par "|".
+5. Chaque modification porte une justification courte.
+6. Demande ambiguë ou hors de ces cas : ne la mets pas dans le diff, signale-la \
+dans une clé "remarque" à la racine.
+"""
+
+
+def prompt_systeme_admin() -> str:
+    """Prompt système de l'agent d'administration des référentiels."""
+    return CONSIGNES_ADMIN
+
+
+def prompt_utilisateur_admin(texte: str) -> str:
+    """Prompt utilisateur : l'instruction en texte libre."""
+    return f"Mise à jour demandée par l'administrateur :\n« {texte} »\n\nPropose le diff."
