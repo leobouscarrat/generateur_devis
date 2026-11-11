@@ -151,8 +151,8 @@ def test_historique_devis_30_lignes_valides(session):
     assert len(rows) == 0, f"{len(rows)} lignes historique_devis avec client_id invalide"
 
 
-def test_piece_003_compatibilite_cout_prix(session):
-    """Compatibilité piece_003 : données seedées doivent permettre coût ≈ 2,20 € / prix ≈ 2,93 € à qté 100."""
+def test_piece_support_compatibilite_cout_prix(session):
+    """Compatibilité piece_support : données seedées doivent permettre coût ≈ 2,20 € / prix ≈ 2,93 € à qté 100."""
     seed(session)
 
     # --- Récupération des valeurs depuis les tables initialisées ---
@@ -185,9 +185,9 @@ def test_piece_003_compatibilite_cout_prix(session):
         categorie="petite", epaisseur_max_mm=3.0
     ).one()
 
-    # --- Calcul du coût piece_003 §8.3 ---
+    # --- Calcul du coût piece_support §8.3 ---
     # Zone flan standard : 75 × 60 mm = 4 500 mm²
-    zone_mm2 = 4500.0  # format standard piece_003 (75×60 mm), §8.3
+    zone_mm2 = 4500.0  # format standard piece_support (75×60 mm), §8.3
 
     # Bloc 1 : Matière
     masse_kg = zone_mm2 * 2.0 * matiere.densite_kg_dm3 / 1_000_000

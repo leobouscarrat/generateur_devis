@@ -37,7 +37,7 @@ MATIERE = "S235JR"  # acier 7,85 kg/dm³, 1,10 €/kg (seed)
 QUANTITE = 100  # référence §8.3 : montants unitaires à Q=100
 
 
-def piece_003() -> PieceExtraite:
+def piece_support() -> PieceExtraite:
     """Le « SUPPORT » du §8 : Z, 2 plis 90°, R 2 mm, cotes extérieures."""
     return PieceExtraite(
         matiere=Matiere(epaisseur=Champ[float](valeur=2.0)),
@@ -80,7 +80,7 @@ def session():
 @pytest.fixture
 def flan_003(session):
     matiere = get_matiere(MATIERE, session)
-    return construire_flan(piece_003(), matiere.densite_kg_dm3, 0.40)
+    return construire_flan(piece_support(), matiere.densite_kg_dm3, 0.40)
 
 
 # --- C3-C5 : Modèles Pydantic des 3 blocs ---
@@ -114,7 +114,7 @@ def test_bloc_pliage_modele_pydantic(session, flan_003):
     """C5 : BlocPliage est un modèle Pydantic avec les champs attendus."""
     from generateur_devis.calcul_prix import BlocPliage
 
-    bloc = calculer_bloc_pliage(piece_003(), flan_003, session)
+    bloc = calculer_bloc_pliage(piece_support(), flan_003, session)
     assert isinstance(bloc, BlocPliage)
     assert hasattr(bloc, "nb_plis")
     assert hasattr(bloc, "temps_par_pli_s")
@@ -130,7 +130,7 @@ def test_calculer_blocs_1_3_retourne_trois_blocs(session, flan_003):
     """C6 : calculer_blocs_1_3 retourne un objet BlocsCout avec matiere/decoupe/pliage."""
     from generateur_devis.calcul_prix import BlocsCout
 
-    blocs = calculer_blocs_1_3(piece_003(), flan_003, MATIERE, session)
+    blocs = calculer_blocs_1_3(piece_support(), flan_003, MATIERE, session)
     assert isinstance(blocs, BlocsCout)
     assert hasattr(blocs, "matiere")
     assert hasattr(blocs, "decoupe")
@@ -179,14 +179,14 @@ def test_bloc_matiere_rendement_nul_levere_erreur(session, flan_003):
 # --- C13-C16 : Vérification des coûts de référence ---
 
 
-def test_bloc_matiere_cout_reference_piece_003(session, flan_003):
+def test_bloc_matiere_cout_reference_piece_support(session, flan_003):
     """C13 : Bloc 1 coût variable unitaire ≈ 0,10 €, coût fixe par lot = 0 € à Q=100."""
     bloc = calculer_bloc_matiere(flan_003, MATIERE, session)
     assert bloc.cout_variable_eur == pytest.approx(0.10, abs=0.01)
     assert bloc.cout_fixe_eur_par_lot == 0.0
 
 
-def test_bloc_decoupe_cout_reference_piece_003(session, flan_003):
+def test_bloc_decoupe_cout_reference_piece_support(session, flan_003):
     """C14 : Bloc 2 coût variable unitaire ≈ 0,30 €, coût fixe par lot ≈ 30 € à Q=100."""
     bloc = calculer_bloc_decoupe(flan_003, "acier", session)
     assert bloc.longueur_coupe_mm == pytest.approx(343.0, abs=3.0)
@@ -199,9 +199,9 @@ def test_bloc_decoupe_cout_reference_piece_003(session, flan_003):
     )
 
 
-def test_bloc_pliage_cout_reference_piece_003(session, flan_003):
+def test_bloc_pliage_cout_reference_piece_support(session, flan_003):
     """C15 : Bloc 3 coût variable unitaire ≈ 0,31 €, coût fixe par lot ≈ 23,3 € à Q=100."""
-    bloc = calculer_bloc_pliage(piece_003(), flan_003, session)
+    bloc = calculer_bloc_pliage(piece_support(), flan_003, session)
     assert bloc.nb_plis == 2
     assert bloc.temps_par_pli_s == pytest.approx(8.0)
     assert bloc.temps_cycle_s == pytest.approx(16.0)
@@ -212,9 +212,9 @@ def test_bloc_pliage_cout_reference_piece_003(session, flan_003):
     )
 
 
-def test_blocs_100_qte_totaux_piece_003(session, flan_003):
+def test_blocs_100_qte_totaux_piece_support(session, flan_003):
     """C16 : cout_variable + cout_fixe/quantité donnent les totaux référencés à Q=100."""
-    blocs = calculer_blocs_1_3(piece_003(), flan_003, MATIERE, session)
+    blocs = calculer_blocs_1_3(piece_support(), flan_003, MATIERE, session)
     assert blocs.matiere.cout_variable_eur == pytest.approx(0.10, abs=0.01)
     assert blocs.decoupe.cout_variable_eur == pytest.approx(0.30, abs=0.01)
     assert blocs.pliage.cout_variable_eur == pytest.approx(0.31, abs=0.01)
@@ -243,7 +243,7 @@ def test_bloc_decoupe_grandeur_amorçages(session, flan_003):
 
 def test_bloc_pliage_grandeur_nb_plis(session, flan_003):
     """C17 : Grandeur intermédiaire nb_plis = 2."""
-    bloc = calculer_bloc_pliage(piece_003(), flan_003, session)
+    bloc = calculer_bloc_pliage(piece_support(), flan_003, session)
     assert bloc.nb_plis == 2
 
 
@@ -261,5 +261,5 @@ def test_parametres_postes_depuis_la_base(session):
 
 def test_bloc_pliage_aucun_retournement_v1(session, flan_003):
     """C19 : En V1, le bloc 3 ne compte pas le temps de retournement de la plieuse."""
-    bloc = calculer_bloc_pliage(piece_003(), flan_003, session)
+    bloc = calculer_bloc_pliage(piece_support(), flan_003, session)
     assert bloc.temps_cycle_s == pytest.approx(16.0)

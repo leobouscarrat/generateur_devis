@@ -21,7 +21,7 @@ FACTEUR_K = 0.40
 
 # --- Critère 5 : références L, U, Z -------------------------------------------
 
-def piece_003_z() -> PieceExtraite:
+def piece_support_z() -> PieceExtraite:
     """Z : référence §8 (déjà utilisée dans test_modele3d.py)."""
     return PieceExtraite(
         matiere=Matiere(epaisseur=Champ[float](valeur=2.0)),

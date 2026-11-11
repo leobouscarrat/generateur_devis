@@ -19,7 +19,7 @@ Formules : docs/logique_metier.md §3 (blocs 1–3). Chaque bloc sépare :
 Limites V1 assumées :
 
 - le temps de retournement de la presse plieuse (``temps_retournement_s`` de
-  la table ``temps_pliage``) n'est **pas** compté : la référence piece_003
+  la table ``temps_pliage``) n'est **pas** compté : la référence piece_support
   (§8.3 : 2 plis × 8 s = 16 s) l'exclut ;
 - le calepinage est approximé par un rendement fixe (§10).
 """
@@ -331,7 +331,7 @@ def calculer_bloc_finition(
     Args:
         traitement_id: traitement du référentiel à chiffrer explicitement
             (option proposée hors chiffrage de base, ex. peinture de
-            piece_003). Sinon, le type extrait du plan est résolu via
+            piece_support). Sinon, le type extrait du plan est résolu via
             ``TRAITEMENT_ID_PAR_TYPE``.
 
     Returns:

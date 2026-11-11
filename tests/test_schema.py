@@ -8,7 +8,7 @@ from generateur_devis.schema.export import CHEMIN_SCHEMA, texte_schema
 
 RACINE = Path(__file__).resolve().parents[1]
 EXEMPLE = RACINE / "exemples" / "equerre_fictive.json"
-PIECE_003 = RACINE / "data" / "prive" / "annotations" / "piece_003.json"
+PIECE_SUPPORT = RACINE / "data" / "prive" / "annotations" / "piece_003.json"
 
 
 def charger(chemin: Path) -> PieceExtraite:
@@ -22,9 +22,9 @@ def test_exemple_fictif_valide():
     assert piece.problemes_coherence() == []
 
 
-@pytest.mark.skipif(not PIECE_003.exists(), reason="annotation privée absente")
-def test_annotation_piece_003_valide():
-    piece = charger(PIECE_003)
+@pytest.mark.skipif(not PIECE_SUPPORT.exists(), reason="annotation privée absente")
+def test_annotation_piece_support_valide():
+    piece = charger(PIECE_SUPPORT)
     assert piece.profil_pliage is not None and piece.profil_pliage.nb_plis == 2
     assert piece.matiere.designation.valeur is None  # matière absente du plan
     assert sum(c.quantite for c in piece.composants) == 2
