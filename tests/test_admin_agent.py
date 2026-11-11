@@ -221,6 +221,22 @@ def test_coercition_bool_chaine(session):
     assert ligne.en_stock is False
 
 
+def test_rayon_pliage_defaut_parametre_administrable(session):
+    """Le rayon de pliage proposé par défaut est un paramètre administrable
+    (utilisé quand le plan ne cote aucun rayon, ni par pli ni en note générale)."""
+    from generateur_devis.data.acces import get_parametre
+
+    assert get_parametre("rayon_pliage_defaut_mm", session) == 1.0
+    proposition = PropositionAdmin(modifications=[ModificationAdmin(
+        type="mise_a_jour", table="parametres", ligne_id="rayon_pliage_defaut_mm",
+        champ="valeur", valeur="2.5",
+        justification="outil standard R2.5",
+    )])
+    proposition.appliquer("acheteur", session)
+    session.commit()
+    assert get_parametre("rayon_pliage_defaut_mm", session) == 2.5
+
+
 def test_modele_extraction_parametre_administrable(session):
     """Le modèle d'extraction est un paramètre base modifiable par l'agent."""
     from generateur_devis.data.acces import get_parametre

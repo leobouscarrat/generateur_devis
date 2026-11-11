@@ -203,6 +203,10 @@ _PARAMETRES_DEFAUT: dict[str, Any] = {
     # Modèle d'extraction unique, administrable (invisible côté devis) ;
     # surchargeable par la variable d'environnement MODELE_EXTRACTION.
     "modele_extraction": "claude-code:sonnet",
+    # Rayon de pliage intérieur proposé par défaut sur l'écran de validation
+    # quand le plan ne cote aucun rayon (ni par pli, ni en note générale) —
+    # règle atelier usuelle R ≈ épaisseur ; valeur administrable par l'agent.
+    "rayon_pliage_defaut_mm": "1.0",
     # Seuils des règles de faisabilité (multiples de l'épaisseur, §3b architecture)
     "regle_diam_trou_min_e": "1.0",
     "regle_aile_min_e": "4.0",
