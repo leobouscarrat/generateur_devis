@@ -324,7 +324,12 @@ def ecran_depot() -> ResultatDevis | None:
                 raise ValueError
         except ValueError:
             st.error("Quantités invalides : entiers positifs séparés par des virgules.")
-        nom_modele = st.text_input("Modèle d'extraction", os.environ.get("MODELE_EXTRACTION", ""))
+    # Modèle d'extraction : paramètre administrable (agent 5.2), invisible ici ;
+    # la variable d'environnement MODELE_EXTRACTION surcharge le paramètre.
+    with get_session() as session:
+        nom_modele = os.environ.get("MODELE_EXTRACTION") or get_parametre(
+            "modele_extraction", session
+        )
 
     if st.button(
         "Lancer l'analyse",

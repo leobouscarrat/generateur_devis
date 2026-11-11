@@ -21,6 +21,7 @@ from generateur_devis.admin_agent import (
     PropositionAdmin,
     proposer_modifications,
 )
+from generateur_devis.data.acces import get_parametre
 from generateur_devis.data.audit import historique
 from generateur_devis.data.db import get_session
 from generateur_devis.ui.auth import verifier_identifiants
@@ -79,7 +80,12 @@ def main() -> None:
         st.session_state.pop(CLE_PROPOSITION_ADMIN, None)
         st.rerun()
 
-    nom_modele = st.text_input("Modèle de l'agent", os.environ.get("MODELE_EXTRACTION", ""))
+    # Modèle par défaut : paramètre administrable (l'agent peut le modifier).
+    with get_session() as session:
+        modele_defaut = os.environ.get("MODELE_EXTRACTION") or get_parametre(
+            "modele_extraction", session
+        )
+    nom_modele = st.text_input("Modèle de l'agent", modele_defaut)
 
     proposition: PropositionAdmin | None = st.session_state.get(CLE_PROPOSITION_ADMIN)
 

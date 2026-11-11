@@ -200,6 +200,9 @@ _PARAMETRES_DEFAUT: dict[str, Any] = {
     "devise": "EUR",
     "validite_devis_jours": "30",
     "conditions_generales": "Prix HT, départ atelier.",
+    # Modèle d'extraction unique, administrable (invisible côté devis) ;
+    # surchargeable par la variable d'environnement MODELE_EXTRACTION.
+    "modele_extraction": "claude-code:sonnet",
     # Seuils des règles de faisabilité (multiples de l'épaisseur, §3b architecture)
     "regle_diam_trou_min_e": "1.0",
     "regle_aile_min_e": "4.0",
