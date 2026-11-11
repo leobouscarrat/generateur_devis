@@ -26,6 +26,7 @@ from generateur_devis.schema.piece import (
     ProfilPliage,
     Trou,
 )
+from generateur_devis.ui.app import _valider_lignes
 from generateur_devis.ui.pipeline import rechiffrer
 from generateur_devis.ui.rendu3d import maillage_vers_figure
 
@@ -128,3 +129,44 @@ def test_maillage_vers_figure(session):
 
 def test_maillage_vers_figure_vide():
     assert maillage_vers_figure(None) is None
+
+
+# --- Validation des lignes du formulaire (pas de suppression silencieuse) ----
+
+
+def test_valider_lignes_valides():
+    profil = [
+        {"type": "aile", "longueur": 42.0, "angle": None, "sens": None},
+        {"type": "pli", "longueur": None, "angle": 90.0, "sens": "haut"},
+        {"type": None, "longueur": None, "angle": None, "sens": None},  # ligne vide ignorée
+    ]
+    trous = [{"forme": "rond", "diametre": 8.75, "quantite": 2}]
+    assert _valider_lignes(profil, trous) == []
+
+
+def test_valider_lignes_aile_sans_longueur():
+    """Une aile sans longueur est une erreur explicite, pas une suppression."""
+    profil = [{"type": "aile", "longueur": None, "angle": None, "sens": None}]
+    erreurs = _valider_lignes(profil, [])
+    assert len(erreurs) == 1
+    assert "aile" in erreurs[0]
+
+
+def test_valider_lignes_pli_incomplet():
+    erreurs = _valider_lignes(
+        [{"type": "pli", "longueur": None, "angle": None, "sens": "gauche"}], []
+    )
+    assert len(erreurs) == 2  # angle manquant + sens invalide
+
+
+def test_valider_lignes_type_inconnu():
+    erreurs = _valider_lignes(
+        [{"type": "courbe", "longueur": 10.0, "angle": None, "sens": None}], []
+    )
+    assert len(erreurs) == 1
+    assert "aile" in erreurs[0] and "pli" in erreurs[0]
+
+
+def test_valider_lignes_trou_incomplet():
+    erreurs = _valider_lignes([], [{"forme": "rond", "diametre": None, "quantite": 0}])
+    assert len(erreurs) == 2  # diamètre manquant + quantité invalide

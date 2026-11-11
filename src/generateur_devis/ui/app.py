@@ -150,11 +150,60 @@ def _afficher_constats(resultat: ResultatDevis) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _editer_piece(piece: PieceExtraite, matieres: list[str]) -> tuple[PieceExtraite, str]:
+def _valider_lignes(lignes_profil: list[dict], lignes_trous: list[dict]) -> list[str]:
+    """Valide les lignes des data_editor — aucune suppression silencieuse.
+
+    Schéma attendu (documenté pour la conversion DataFrame → schéma pièce) :
+    - profil : ``type`` (« aile » | « pli »), ``longueur`` (aile, mm > 0),
+      ``angle`` (pli, degrés), ``sens`` (pli, « haut » | « bas ») ;
+    - trous : ``forme``, ``diametre`` (mm > 0), ``quantite`` (≥ 1).
+
+    Une ligne entièrement vide est ignorée (ligne neuve du data_editor) ;
+    une ligne **partiellement** remplie est une erreur explicite — elle ne
+    doit jamais disparaître du chiffrage sans avertissement.
+    """
+    erreurs: list[str] = []
+    for i, ligne in enumerate(lignes_profil, start=1):
+        remplie = any(v is not None and v != "" for v in ligne.values())
+        if not remplie:
+            continue
+        type_, longueur, angle, sens = (
+            ligne.get("type"),
+            ligne.get("longueur"),
+            ligne.get("angle"),
+            ligne.get("sens"),
+        )
+        if type_ == "aile":
+            if not longueur or float(longueur) <= 0:
+                erreurs.append(f"Profil ligne {i} : aile sans longueur valide.")
+        elif type_ == "pli":
+            if angle is None or angle == "":
+                erreurs.append(f"Profil ligne {i} : pli sans angle.")
+            if sens not in ("haut", "bas"):
+                erreurs.append(f"Profil ligne {i} : sens du pli « haut » ou « bas » attendu.")
+        else:
+            erreurs.append(f"Profil ligne {i} : type « aile » ou « pli » attendu, reçu {type_!r}.")
+    for i, ligne in enumerate(lignes_trous, start=1):
+        remplie = any(v is not None and v != "" for v in ligne.values())
+        if not remplie:
+            continue
+        if not ligne.get("diametre") or float(ligne["diametre"]) <= 0:
+            erreurs.append(f"Trou ligne {i} : diamètre manquant ou invalide.")
+        if not ligne.get("quantite") or int(ligne["quantite"]) < 1:
+            erreurs.append(f"Trou ligne {i} : quantité ≥ 1 attendue.")
+    return erreurs
+
+
+def _editer_piece(
+    piece: PieceExtraite, matieres: list[str]
+) -> tuple[PieceExtraite | None, str, list[str]]:
     """Formulaire borné V1 : matière, épaisseur, largeur, profil de pliage, trous.
 
-    Retourne la pièce reconstruite et la matière choisie. Streamlit ré-exécute
-    le script à chaque modification : le recalcul est donc immédiat (§4).
+    Retourne la pièce reconstruite, la matière choisie et les erreurs de
+    saisie. En cas d'erreur, la pièce est None : pas de recalcul sur un
+    formulaire incomplet (jamais de suppression silencieuse d'un élément).
+    Streamlit ré-exécute le script à chaque modification : le recalcul est
+    donc immédiat (§4).
     """
     col1, col2, col3 = st.columns(3)
     with col1:
@@ -208,19 +257,27 @@ def _editer_piece(piece: PieceExtraite, matieres: list[str]) -> tuple[PieceExtra
     )
 
     elements: list[Aile | Pli] = []
-    for ligne in tableau_profil.to_dict("records"):
-        if ligne["type"] == "aile" and ligne["longueur"]:
+    lignes_profil_editees = tableau_profil.to_dict("records")
+    lignes_trous_editees = tableau_trous.to_dict("records")
+    erreurs = _valider_lignes(lignes_profil_editees, lignes_trous_editees)
+    if erreurs:
+        return None, matiere_id, erreurs
+
+    for ligne in lignes_profil_editees:
+        if not any(v is not None and v != "" for v in ligne.values()):
+            continue  # ligne vide du data_editor
+        if ligne["type"] == "aile":
             elements.append(Aile(longueur=float(ligne["longueur"])))
-        elif ligne["type"] == "pli" and ligne["angle"]:
-            elements.append(Pli(angle=float(ligne["angle"]), sens=ligne["sens"] or "haut"))
+        else:
+            elements.append(Pli(angle=float(ligne["angle"]), sens=ligne["sens"]))
     trous = [
         Trou(
             forme=ligne["forme"] or "rond",
             diametre=float(ligne["diametre"]),
             quantite=int(ligne["quantite"]),
         )
-        for ligne in tableau_trous.to_dict("records")
-        if ligne["diametre"]
+        for ligne in lignes_trous_editees
+        if any(v is not None and v != "" for v in ligne.values())
     ]
 
     editee = piece.model_copy(deep=True)
@@ -236,7 +293,7 @@ def _editer_piece(piece: PieceExtraite, matieres: list[str]) -> tuple[PieceExtra
             elements=elements,
         )
     editee.contours.trous = trous
-    return editee, matiere_id
+    return editee, matiere_id, []
 
 
 def ecran_validation() -> None:
@@ -258,7 +315,12 @@ def ecran_validation() -> None:
             {tid for tid in TRAITEMENT_ID_PAR_TYPE.values() if get_traitement(tid, session)}
         )
 
-        editee, matiere_id = _editer_piece(piece, matieres)
+        editee, matiere_id, erreurs_saisie = _editer_piece(piece, matieres)
+        if editee is None:
+            for erreur in erreurs_saisie:
+                st.error(f"⛔ Saisie incomplète — {erreur}")
+            st.info("Corrigez le formulaire : aucun élément n'est supprimé silencieusement.")
+            return
 
         # --- Anomalies et alertes en tête ------------------------------------
         for probleme in editee.problemes_coherence():
@@ -345,5 +407,7 @@ def ecran_validation() -> None:
             st.rerun()
 
 
-# Streamlit exécute le module au premier niveau à chaque interaction.
-main()
+# `streamlit run` exécute le script comme __main__ ; le garde-fou permet
+# aussi l'import des fonctions pures dans les tests.
+if __name__ == "__main__":
+    main()
