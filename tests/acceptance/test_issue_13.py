@@ -3,6 +3,7 @@
 Un test par critère d'acceptation, indépendants, appelant le code réel.
 Base SQLite en mémoire seedée (même approche que tests/test_faisabilite.py).
 """
+
 from __future__ import annotations
 
 import pytest
@@ -22,13 +23,13 @@ from generateur_devis.geometrie import construire_flan
 from generateur_devis.schema.piece import (
     Aile,
     Champ,
-    Contours,
     CoinCoupe,
+    Contours,
     Encombrement,
     Matiere,
     PieceExtraite,
-    ProfilPliage,
     Pli,
+    ProfilPliage,
     Trou,
 )
 
@@ -156,19 +157,23 @@ def test_bloc_decoupe_vitesse_manquante_levere_erreur(session, flan_003):
 
 
 def test_bloc_decoupe_poste_inconnu_levere_erreur(session, flan_003):
-    """C9 : Poste de découpe inconnu lève ErreurChiffrage (couverts par test_parametres)."""
-    # C9 is covered by test_parametres_postes_depuis_la_base which verifies
-    # that get_parametre("poste_decoupe") matches get_poste("LASER_3KW").id.
-    # The actual "unknown poste" error is tested by the DB mutation in that test.
-    pass
+    """C9 : Poste de découpe inconnu lève ErreurChiffrage."""
+    from generateur_devis.calcul_prix import ErreurChiffrage
+
+    session.merge(Parametre(cle="poste_decoupe", valeur="LASER_FANTOME"))
+    session.flush()
+    with pytest.raises(ErreurChiffrage, match="Poste de découpe inconnu"):
+        calculer_bloc_decoupe(flan_003, "acier", session)
 
 
 def test_bloc_matiere_rendement_nul_levere_erreur(session, flan_003):
     """C10 : Rendement de calepinage égal à 0 lève ErreurChiffrage."""
     from generateur_devis.calcul_prix import ErreurChiffrage
 
-    # Cannot easily mutate fixture; covered by seed values
-    pass
+    session.merge(Parametre(cle="rendement_calepinage", valeur="0"))
+    session.flush()
+    with pytest.raises(ErreurChiffrage, match="Rendement de calepinage invalide"):
+        calculer_bloc_matiere(flan_003, MATIERE, session)
 
 
 # --- C13-C16 : Vérification des coûts de référence ---
@@ -193,7 +198,9 @@ def test_bloc_decoupe_cout_reference_piece_003(session, flan_003):
     assert bloc.temps_cycle_s == pytest.approx(9.1, abs=0.2)
     assert bloc.cout_variable_eur == pytest.approx(0.30, abs=0.01)
     assert bloc.cout_fixe_eur_par_lot == pytest.approx(30.0, rel=0.01)
-    assert bloc.cout_variable_eur + bloc.cout_fixe_eur_par_lot / QUANTITE == pytest.approx(0.60, abs=0.02)
+    assert bloc.cout_variable_eur + bloc.cout_fixe_eur_par_lot / QUANTITE == pytest.approx(
+        0.60, abs=0.02
+    )
 
 
 def test_bloc_pliage_cout_reference_piece_003(session, flan_003):
@@ -204,7 +211,9 @@ def test_bloc_pliage_cout_reference_piece_003(session, flan_003):
     assert bloc.temps_cycle_s == pytest.approx(16.0)
     assert bloc.cout_variable_eur == pytest.approx(0.31, abs=0.01)
     assert bloc.cout_fixe_eur_par_lot == pytest.approx(70.0 / 3.0, rel=0.01)
-    assert bloc.cout_variable_eur + bloc.cout_fixe_eur_par_lot / QUANTITE == pytest.approx(0.54, abs=0.02)
+    assert bloc.cout_variable_eur + bloc.cout_fixe_eur_par_lot / QUANTITE == pytest.approx(
+        0.54, abs=0.02
+    )
 
 
 def test_blocs_100_qte_totaux_piece_003(session, flan_003):
