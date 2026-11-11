@@ -208,6 +208,8 @@ _PARAMETRES_DEFAUT: dict[str, Any] = {
     # Opérations secondaires appliquées par le moteur de chiffrage (table operations)
     "operation_ebavurage": "EBAVURAGE_P",
     "operation_taraudage": "TARAUDAGE",
+    # Âge max d'un prix matière avant alerte (contrôles de cohérence du chiffrage)
+    "prix_matiere_max_age_jours": "180",
 }
 
 # ---------------------------------------------------------------------------

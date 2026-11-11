@@ -386,7 +386,8 @@ def get_parametre(cle: str, session: Session) -> str | float | int:
     - marge_defaut, rendement_calepinage, facteur_k  → float
     - regle_diam_trou_min_e, regle_aile_min_e,
       regle_rayon_min_e                              → float
-    - minimum_commande_eur, validite_devis_jours      → int
+    - minimum_commande_eur, validite_devis_jours,
+      prix_matiere_max_age_jours                      → int
     - paliers_quantite                                → list[int]
     - devise, poste_decoupe, poste_pliage,
       operation_ebavurage, operation_taraudage          → str
@@ -414,6 +415,7 @@ def get_parametre(cle: str, session: Session) -> str | float | int:
         "minimum_commande_eur": int,
         "frais_structure_pct": int,
         "validite_devis_jours": int,
+        "prix_matiere_max_age_jours": int,
         "paliers_quantite": lambda v: [int(x.strip()) for x in v.split(",")],
         "devise": str,
         "poste_decoupe": str,
