@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 
 from sqlalchemy import (
     ForeignKey,
@@ -278,3 +278,34 @@ class BorneControle(Base):
 
     def __repr__(self) -> str:
         return f"BorneControle(champ={self.champ!r}, niveau={self.niveau!r})"
+
+
+# ---------------------------------------------------------------------------
+# Audit des modifications de référentiels (§12 : daté et attribué)
+# ---------------------------------------------------------------------------
+
+
+class ModificationReferentiel(Base):
+    """Ligne d'audit : chaque modification d'un référentiel, datée et attribuée.
+
+    Les valeurs sont sérialisées en texte ; la table ciblée reste la source
+    de vérité. ``valeur_avant=None`` = création, ``valeur_apres=None`` =
+    suppression.
+    """
+
+    __tablename__ = "modifications_referentiels"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    table_nom: Mapped[str] = mapped_column(nullable=False)
+    ligne_id: Mapped[str] = mapped_column(nullable=False)
+    champ: Mapped[str] = mapped_column(nullable=False)
+    valeur_avant: Mapped[str | None] = mapped_column(nullable=True)
+    valeur_apres: Mapped[str | None] = mapped_column(nullable=True)
+    auteur: Mapped[str] = mapped_column(nullable=False)  # jamais anonyme
+    date: Mapped[datetime] = mapped_column(nullable=False, default=datetime.now)
+
+    def __repr__(self) -> str:
+        return (
+            f"ModificationReferentiel({self.table_nom}.{self.champ} "
+            f"sur {self.ligne_id!r} par {self.auteur!r})"
+        )

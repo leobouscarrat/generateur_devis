@@ -19,8 +19,12 @@ from generateur_devis.data.tables import (
 expected_tables = {
     "matieres", "epaisseurs_dispo", "postes", "vitesses_coupe",
     "temps_pliage", "operations", "composants", "traitements",
-    "parametres", "clients", "historique_devis", "bornes_controle"
+    "parametres", "clients", "historique_devis", "bornes_controle",
+    "modifications_referentiels",  # audit §12 (issue #33) — vide après seed
 }
+
+# Tables légitimement vides après seed() (pas de référentiel, que de l'audit).
+TABLES_VIDES_APRES_SEED = {"modifications_referentiels"}
 
 
 @pytest.fixture
@@ -43,8 +47,8 @@ def _compte_lignes(session, table_name):
 def test_chargement_complet_12_tables(session):
     """Tous les référentiels doivent être peuplés après seed()."""
     seed(session)
-    # Vérifier que toutes les tables ont au moins une ligne
-    for table in expected_tables:
+    # Vérifier que toutes les tables ont au moins une ligne (sauf l'audit)
+    for table in expected_tables - TABLES_VIDES_APRES_SEED:
         compte = _compte_lignes(session, table)
         assert compte > 0, f"Table {table} vide après seed()"
     # Vérifier les noms de tables via l'inspecteur attaché à l'engine de la session
