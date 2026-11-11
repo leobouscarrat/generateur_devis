@@ -26,11 +26,15 @@ Limites V1 assumées :
 
 from __future__ import annotations
 
+from datetime import date
+from typing import cast
+
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 
 from generateur_devis.data.acces import (
     TRAITEMENT_ID_PAR_TYPE,
+    get_client,
     get_composant,
     get_matiere,
     get_operation,
@@ -40,7 +44,8 @@ from generateur_devis.data.acces import (
     get_traitement,
     get_vitesse_coupe,
 )
-from generateur_devis.geometrie import Flan
+from generateur_devis.faisabilite import evaluer_faisabilite
+from generateur_devis.geometrie import Flan, construire_flan
 from generateur_devis.schema.piece import PieceExtraite
 
 
@@ -480,3 +485,210 @@ def calculer_blocs_4_6(
         finition=calculer_bloc_finition(piece, flan, session),
         composants=calculer_bloc_composants(piece, composants or [], session),
     )
+
+
+# ---------------------------------------------------------------------------
+# Agrégation (issue #15) : coût de revient, prix, paliers de quantité, trace
+# ---------------------------------------------------------------------------
+
+
+class LigneTrace(BaseModel):
+    """Trace d'une ligne de calcul (formule, valeurs, origine des données).
+
+    Figeable : sérialisée telle quelle dans le résultat, elle ne change
+    plus si un prix de référence évolue ensuite (architecture §Étape 5).
+    ``date_prix`` n'est renseigné que pour les tables qui portent une date
+    de mise à jour (``matieres.date_maj``) — None ailleurs.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    bloc: str
+    formule: str
+    valeurs: dict[str, float | int | str | None]
+    table_origine: str
+    date_prix: date | None = None
+
+
+class PalierPrix(BaseModel):
+    """Coût et prix unitaires à un palier de quantité."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    quantite: int
+    cout_unitaire_eur: float
+    prix_unitaire_eur: float
+
+
+class Chiffrage(BaseModel):
+    """Résultat complet du chiffrage : blocs, paliers, trace."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    blocs_1_3: BlocsCout
+    blocs_4_6: BlocsCout46
+    paliers: list[PalierPrix]
+    trace: list[LigneTrace]
+
+
+def chiffrer(
+    piece: PieceExtraite,
+    matiere_id: str,
+    session: Session,
+    quantites: list[int] | None = None,
+    composants: list[tuple[str, int]] | None = None,
+    client_id: str | None = None,
+) -> Chiffrage:
+    """Chiffre une pièce : agrégation des 6 blocs, marge, paliers, trace.
+
+    - coût de revient(Q) = Σ variables unitaires + Σ réglages ÷ Q
+      (+ contribution finition ``max(variable, fixe ÷ Q)`` si traitement) ;
+    - prix unitaire HT = coût ÷ (1 − marge) ; marge spécifique du client si
+      fournie, sinon paramètre ``marge_defaut`` (§4) ;
+    - paliers : argument ``quantites`` ou paramètre ``paliers_quantite`` (§5) ;
+    - chaque ligne de calcul est tracée (formule, valeurs, table d'origine).
+
+    Raises:
+        ErreurChiffrage: faisabilité bloquante, quantité ≤ 0, matière ou
+            client inconnu du référentiel.
+    """
+    if quantites is None:
+        quantites = cast(list[int], get_parametre("paliers_quantite", session))
+    if not quantites or any(q <= 0 for q in quantites):
+        msg = f"Paliers de quantité invalides : {quantites}."
+        raise ErreurChiffrage(msg)
+
+    matiere = get_matiere(matiere_id, session)
+    if matiere is None:
+        msg = f"Matière inconnue dans le référentiel : {matiere_id!r}."
+        raise ErreurChiffrage(msg)
+    constats = evaluer_faisabilite(piece, matiere_id, session)
+    blocages = [c for c in constats if c.severite == "blocage"]
+    if blocages:
+        details = " ; ".join(c.message for c in blocages)
+        msg = f"Pièce non chiffrable (faisabilité bloquante) : {details}"
+        raise ErreurChiffrage(msg)
+    facteur_k = float(get_parametre("facteur_k", session))
+    flan = construire_flan(piece, matiere.densite_kg_dm3, facteur_k)
+
+    blocs_1_3 = calculer_blocs_1_3(piece, flan, matiere_id, session)
+    blocs_4_6 = calculer_blocs_4_6(piece, flan, session, composants)
+
+    marge = float(get_parametre("marge_defaut", session))
+    if client_id is not None:
+        client = get_client(client_id, session)
+        if client is None:
+            msg = f"Client inconnu dans le référentiel : {client_id!r}."
+            raise ErreurChiffrage(msg)
+        if client.marge_specifique is not None:
+            marge = client.marge_specifique
+
+    variable = (
+        blocs_1_3.matiere.cout_variable_eur
+        + blocs_1_3.decoupe.cout_variable_eur
+        + blocs_1_3.pliage.cout_variable_eur
+        + blocs_4_6.soudure.cout_variable_eur
+        + blocs_4_6.composants.cout_variable_eur
+    )
+    fixe = (
+        blocs_1_3.matiere.cout_fixe_eur_par_lot
+        + blocs_1_3.decoupe.cout_fixe_eur_par_lot
+        + blocs_1_3.pliage.cout_fixe_eur_par_lot
+        + blocs_4_6.soudure.cout_fixe_eur_par_lot
+        + blocs_4_6.composants.cout_fixe_eur_par_lot
+    )
+    finition = blocs_4_6.finition
+
+    paliers: list[PalierPrix] = []
+    for q in quantites:
+        cout = variable + fixe / q
+        if finition is not None:
+            cout += max(finition.cout_variable_eur, finition.cout_fixe_eur_par_lot / q)
+        paliers.append(
+            PalierPrix(
+                quantite=q,
+                cout_unitaire_eur=cout,
+                prix_unitaire_eur=cout / (1.0 - marge),
+            )
+        )
+
+    trace = [
+        LigneTrace(
+            bloc="matiere",
+            formule="masse flan ÷ rendement calepinage × prix matière",
+            valeurs={
+                "masse_flan_kg": blocs_1_3.matiere.masse_flan_kg,
+                "rendement": blocs_1_3.matiere.rendement_calepinage,
+                "prix_eur_kg": blocs_1_3.matiere.prix_matiere_eur_kg,
+                "cout_variable_eur": blocs_1_3.matiere.cout_variable_eur,
+            },
+            table_origine="matieres",
+            date_prix=matiere.date_maj,
+        ),
+        LigneTrace(
+            bloc="decoupe",
+            formule="(longueur de coupe ÷ vitesse + amorçages × temps par amorçage) × taux ; réglage × taux",
+            valeurs={
+                "longueur_coupe_mm": blocs_1_3.decoupe.longueur_coupe_mm,
+                "nombre_amorcages": blocs_1_3.decoupe.nombre_amorcages,
+                "vitesse_m_min": blocs_1_3.decoupe.vitesse_m_min,
+                "temps_cycle_s": blocs_1_3.decoupe.temps_cycle_s,
+                "taux_horaire_eur_h": blocs_1_3.decoupe.taux_horaire_eur_h,
+                "cout_variable_eur": blocs_1_3.decoupe.cout_variable_eur,
+                "cout_fixe_eur_par_lot": blocs_1_3.decoupe.cout_fixe_eur_par_lot,
+            },
+            table_origine="vitesses_coupe, postes",
+        ),
+        LigneTrace(
+            bloc="pliage",
+            formule="nb plis × temps par pli × taux ; réglage × taux",
+            valeurs={
+                "nb_plis": blocs_1_3.pliage.nb_plis,
+                "temps_par_pli_s": blocs_1_3.pliage.temps_par_pli_s,
+                "taux_horaire_eur_h": blocs_1_3.pliage.taux_horaire_eur_h,
+                "cout_variable_eur": blocs_1_3.pliage.cout_variable_eur,
+                "cout_fixe_eur_par_lot": blocs_1_3.pliage.cout_fixe_eur_par_lot,
+            },
+            table_origine="temps_pliage, postes",
+        ),
+        LigneTrace(
+            bloc="soudure",
+            formule="0 (pièce unique, V1)",
+            valeurs={"cout_variable_eur": 0.0, "cout_fixe_eur_par_lot": 0.0},
+            table_origine="—",
+        ),
+        LigneTrace(
+            bloc="composants",
+            formule="Σ qté × prix + Σ temps opération × taux poste ; réglages par poste",
+            valeurs={
+                "cout_composants_eur": blocs_4_6.composants.cout_composants_eur,
+                "temps_operations_s": blocs_4_6.composants.temps_operations_s,
+                "cout_operations_eur": blocs_4_6.composants.cout_operations_eur,
+                "cout_variable_eur": blocs_4_6.composants.cout_variable_eur,
+                "cout_fixe_eur_par_lot": blocs_4_6.composants.cout_fixe_eur_par_lot,
+            },
+            table_origine="composants, operations, postes",
+        ),
+        LigneTrace(
+            bloc="marge",
+            formule="prix = coût ÷ (1 − marge)",
+            valeurs={"marge": marge, "client_id": client_id},
+            table_origine="parametres",
+        ),
+    ]
+    if finition is not None:
+        trace.append(
+            LigneTrace(
+                bloc="finition",
+                formule="max(2 × surface nette × prix, minimum de lot ÷ Q)",
+                valeurs={
+                    "traitement_id": finition.traitement_id,
+                    "surface_traitee_m2": finition.surface_traitee_m2,
+                    "prix": finition.prix,
+                    "minimum_lot_eur": finition.minimum_lot_eur,
+                },
+                table_origine="traitements",
+            )
+        )
+
+    return Chiffrage(blocs_1_3=blocs_1_3, blocs_4_6=blocs_4_6, paliers=paliers, trace=trace)
