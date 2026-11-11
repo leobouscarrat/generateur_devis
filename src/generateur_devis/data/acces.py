@@ -360,7 +360,7 @@ def get_parametre(cle: str, session: Session) -> str | float | int:
       regle_rayon_min_e                              → float
     - minimum_commande_eur, validite_devis_jours      → int
     - paliers_quantite                                → list[int]
-    - devise                                          → str
+    - devise, poste_decoupe, poste_pliage             → str
 
     Si la clé est inconnue, lever ValueError.
     """
@@ -387,6 +387,8 @@ def get_parametre(cle: str, session: Session) -> str | float | int:
         "validite_devis_jours": int,
         "paliers_quantite": lambda v: [int(x.strip()) for x in v.split(",")],
         "devise": str,
+        "poste_decoupe": str,
+        "poste_pliage": str,
     }
 
     if cle not in _conversion:
