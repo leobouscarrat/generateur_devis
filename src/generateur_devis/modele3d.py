@@ -24,6 +24,7 @@ from generateur_devis.geometrie import (
     Point2D,
     calculer_ba,
     calculer_bd,
+    rayon_pli,
 )
 from generateur_devis.schema.piece import Aile, PieceExtraite, Pli
 
@@ -78,13 +79,7 @@ def construire_profil_2d(piece: PieceExtraite, facteur_k: float) -> list[Point2D
         msg = "Épaisseur de tôle absente ou invalide : impossible de construire le modèle 3D."
         raise ErreurGeometrie(msg)
 
-    rayons: list[float] = []
-    for i, pli in enumerate(plis):
-        rayon = pli.rayon_interieur if pli.rayon_interieur is not None else profil.rayon_pliage_general
-        if rayon is None or rayon <= 0:
-            msg = f"Rayon de pliage non coté ou invalide (pli {i})."
-            raise ErreurGeometrie(msg)
-        rayons.append(rayon)
+    rayons = [rayon_pli(p, profil.rayon_pliage_general, i) for i, p in enumerate(plis)]
 
     def correction(pli_index: int) -> float:
         """Longueur retirée (cotation ext.) ou ajoutée (int.) à chaque extrémité pliée."""
