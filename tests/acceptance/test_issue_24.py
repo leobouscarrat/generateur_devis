@@ -164,9 +164,11 @@ def test_c7_matiere_modifiable_sur_ecran_validation(session, monkeypatch):
         assert len(matieres) > 0, "Il doit y avoir au moins une matière en base"
 
     # Teste que _editer_piece accepte une matière différente de la défaut
-    piece_modifiee, matiere_choisie = _editer_piece(piece, matieres)
+    piece_modifiee, matiere_choisie, erreurs = _editer_piece(piece, matieres)
 
     # Vérifie que la matière a bien été modifiée
+    assert erreurs == [], "Pas d'erreur de saisie sur le formulaire initial"
+    assert piece_modifiee is not None
     assert matiere_choisie in matieres, "La matière choisie doit être dans la liste disponible"
     assert piece_modifiee.matiere.designation.valeur in matieres, \
         "La pièce modifiée doit avoir une matière de la liste"
