@@ -107,17 +107,20 @@ _POSTES = [
 _VITESSES_COUPE: list[VitesseCoupe] = [
     # acier
     VitesseCoupe(poste_id="LASER_3KW", famille="acier", epaisseur_mm=1.0, vitesse_m_min=7.0, temps_amorcage_s=0.7, gaz="O2"),
+    VitesseCoupe(poste_id="LASER_3KW", famille="acier", epaisseur_mm=1.5, vitesse_m_min=6.0, temps_amorcage_s=0.9, gaz="O2"),
     VitesseCoupe(poste_id="LASER_3KW", famille="acier", epaisseur_mm=2.0, vitesse_m_min=5.0, temps_amorcage_s=1.0, gaz="O2"),
     VitesseCoupe(poste_id="LASER_3KW", famille="acier", epaisseur_mm=3.0, vitesse_m_min=3.5, temps_amorcage_s=1.2, gaz="O2"),
     VitesseCoupe(poste_id="LASER_3KW", famille="acier", epaisseur_mm=5.0, vitesse_m_min=2.2, temps_amorcage_s=1.5, gaz="O2"),
     VitesseCoupe(poste_id="LASER_3KW", famille="acier", epaisseur_mm=10.0, vitesse_m_min=1.0, temps_amorcage_s=3.0, gaz="O2"),
     # inox
     VitesseCoupe(poste_id="LASER_3KW", famille="inox", epaisseur_mm=1.0, vitesse_m_min=6.0, temps_amorcage_s=0.6, gaz="N2"),
+    VitesseCoupe(poste_id="LASER_3KW", famille="inox", epaisseur_mm=1.5, vitesse_m_min=4.8, temps_amorcage_s=0.8, gaz="N2"),
     VitesseCoupe(poste_id="LASER_3KW", famille="inox", epaisseur_mm=2.0, vitesse_m_min=3.5, temps_amorcage_s=1.0, gaz="N2"),
     VitesseCoupe(poste_id="LASER_3KW", famille="inox", epaisseur_mm=3.0, vitesse_m_min=2.2, temps_amorcage_s=1.3, gaz="N2"),
     VitesseCoupe(poste_id="LASER_3KW", famille="inox", epaisseur_mm=5.0, vitesse_m_min=1.2, temps_amorcage_s=2.0, gaz="N2"),
     # aluminium
     VitesseCoupe(poste_id="LASER_3KW", famille="aluminium", epaisseur_mm=1.0, vitesse_m_min=7.0, temps_amorcage_s=0.6, gaz="N2"),
+    VitesseCoupe(poste_id="LASER_3KW", famille="aluminium", epaisseur_mm=1.5, vitesse_m_min=5.5, temps_amorcage_s=0.8, gaz="N2"),
     VitesseCoupe(poste_id="LASER_3KW", famille="aluminium", epaisseur_mm=2.0, vitesse_m_min=4.0, temps_amorcage_s=1.0, gaz="N2"),
     VitesseCoupe(poste_id="LASER_3KW", famille="aluminium", epaisseur_mm=3.0, vitesse_m_min=2.5, temps_amorcage_s=1.3, gaz="N2"),
     VitesseCoupe(poste_id="LASER_3KW", famille="aluminium", epaisseur_mm=5.0, vitesse_m_min=1.2, temps_amorcage_s=2.0, gaz="N2"),
