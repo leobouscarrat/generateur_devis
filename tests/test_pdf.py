@@ -127,6 +127,19 @@ def test_pdf_ne_divulgue_aucun_cout_ni_marge(session):
     assert "coût" not in texte.lower() and "cout" not in texte.lower()
 
 
+def test_pdf_designation_tres_longue_coupee(session):
+    """Une désignation qui déborde de la page est coupée proprement (multi_cell)."""
+    devis = devis_test(session)
+    devis.piece_validee.identification.designation.valeur = (
+        "Support articulé de maintien " * 20  # largement plus large que la page
+    )
+    contenu = generer_pdf_client(devis, validite_jours=30, conditions="Prix HT.")
+    assert contenu.startswith(b"%PDF")
+    with fitz.open(stream=contenu, filetype="pdf") as doc:
+        texte = "".join(page.get_text() for page in doc)
+    assert "Support articulé de maintien" in texte
+
+
 def test_pdf_option_minimum_de_lot(session):
     """À Q=1, l'option est au minimum de lot : max(0.40, 25 ÷ 1) = 25 €."""
     devis = devis_test(session).model_copy(update={"quantite_commandee": 1})

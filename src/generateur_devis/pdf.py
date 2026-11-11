@@ -21,10 +21,13 @@ def _prix_unitaire_option(prix: float, minimum_lot_eur: float, quantite: int) ->
 
 
 def _ligne(pdf: FPDF, libelle: str, valeur: str) -> None:
+    """Libellé en gras + valeur ; la valeur est coupée si elle déborde."""
     pdf.set_font("helvetica", "B", 11)
     pdf.cell(60, 7, libelle)
     pdf.set_font("helvetica", "", 11)
-    pdf.cell(0, 7, valeur, new_x="LMARGIN", new_y="NEXT")
+    # multi_cell part de la position courante (après le libellé) et coupe la
+    # valeur sur plusieurs lignes si elle déborde de la page.
+    pdf.multi_cell(0, 7, valeur)
 
 
 def generer_pdf_client(devis: Devis, validite_jours: int, conditions: str) -> bytes:
