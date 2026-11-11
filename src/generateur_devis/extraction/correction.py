@@ -15,9 +15,10 @@ Bornes V1 (tranchées dans la spec) :
 
 from __future__ import annotations
 
+import re
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 
 from generateur_devis.extraction.extracteur import extraire_json
 from generateur_devis.extraction.prompt import (
@@ -29,6 +30,7 @@ from generateur_devis.llm.base import ErreurModele
 from generateur_devis.schema.piece import (
     CoinCoupe,
     Composant,
+    ElementProfil,
     PieceExtraite,
     ProfilPliage,
     Soudure,
@@ -45,6 +47,42 @@ LISTES_ENRICHISSABLES: dict[str, type] = {
     "soudures": Soudure,
 }
 """Listes auxquelles l'assistant peut ajouter un élément (``ajout_element``)."""
+
+ELEMENTS_MODIFIABLES: dict[str, Any] = {
+    **LISTES_ENRICHISSABLES,
+    "profil_pliage.elements": ElementProfil,
+}
+"""Listes dont un élément existant peut être corrigé (``modification_element``,
+chemin ``liste[index]``). Les éléments du profil de pliage sont validés par
+l'union discriminée ``ElementProfil`` (aile ou pli)."""
+
+_MOTIF_ELEMENT = re.compile(r"^(?P<liste>[\w.]+)\[(?P<index>\d+)\]$")
+
+
+def _resoudre_element(
+    piece: PieceExtraite, chemin: str
+) -> tuple[list[Any], int, Any]:
+    """Résout un chemin ``liste[index]`` vers (liste, index, modèle d'élément).
+
+    Raises:
+        ErreurCorrection: format invalide, liste non modifiable, index hors
+            de la liste.
+    """
+    correspondance = _MOTIF_ELEMENT.match(chemin)
+    if not correspondance:
+        msg = f"Chemin d'élément invalide (attendu « liste[index] ») : {chemin!r}."
+        raise ErreurCorrection(msg)
+    nom_liste = correspondance.group("liste")
+    modele = ELEMENTS_MODIFIABLES.get(nom_liste)
+    if modele is None:
+        msg = f"Liste non modifiable : {nom_liste!r}."
+        raise ErreurCorrection(msg)
+    index = int(correspondance.group("index"))
+    liste = _lire_chemin(piece, nom_liste)
+    if not 0 <= index < len(liste):
+        msg = f"Index hors de la liste {nom_liste} ({len(liste)} élément(s)) : {index}."
+        raise ErreurCorrection(msg)
+    return liste, index, modele
 
 CHEMINS_AUTORISES: dict[str, type] = {
     "matiere.designation.valeur": str,
@@ -63,7 +101,13 @@ class DiffCorrection(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    type: Literal["remplacement", "ajout_composant", "creation_section", "ajout_element"]
+    type: Literal[
+        "remplacement",
+        "ajout_composant",
+        "creation_section",
+        "ajout_element",
+        "modification_element",
+    ]
     chemin: str | None = None
     nouvelle_valeur: Any
     justification: str = ""
@@ -114,6 +158,13 @@ class PropositionCorrection(BaseModel):
                 lignes.append(
                     (diff.chemin or "", "— (absente)", str(diff.nouvelle_valeur), diff.justification)
                 )
+            elif diff.type == "modification_element":
+                try:
+                    liste, index, _ = _resoudre_element(piece, diff.chemin or "")
+                    avant = str(liste[index])
+                except ErreurCorrection:
+                    avant = "—"
+                lignes.append((diff.chemin or "", avant, str(diff.nouvelle_valeur), diff.justification))
             else:
                 etiquettes = diff.chemin or "composants"
                 lignes.append((etiquettes, "—", str(diff.nouvelle_valeur), diff.justification))
@@ -174,6 +225,23 @@ def _appliquer_diff(piece: PieceExtraite, diff: DiffCorrection) -> None:
             raise ErreurCorrection(msg) from e
         liste = _lire_chemin(piece, chemin_liste)
         liste.append(element)
+    elif diff.type == "modification_element":
+        liste, index, modele = _resoudre_element(piece, diff.chemin or "")
+        if not isinstance(diff.nouvelle_valeur, dict):
+            msg = "Une modification d'élément attend un objet de champs à fusionner."
+            raise ErreurCorrection(msg)
+        actuel = liste[index]
+        champs_inconnus = set(diff.nouvelle_valeur) - set(type(actuel).model_fields)
+        if champs_inconnus:
+            msg = f"Champ(s) inconnu(s) de {type(actuel).__name__} : {sorted(champs_inconnus)}."
+            raise ErreurCorrection(msg)
+        try:
+            liste[index] = TypeAdapter(modele).validate_python(
+                {**actuel.model_dump(), **diff.nouvelle_valeur}
+            )
+        except ValidationError as e:
+            msg = f"Élément corrigé invalide : {e.errors()[0]['msg']}."
+            raise ErreurCorrection(msg) from e
     else:  # ajout_composant (conservé pour compatibilité ; ajout_element le généralise)
         try:
             composant = Composant.model_validate(diff.nouvelle_valeur)
@@ -220,6 +288,13 @@ def proposer_correction(piece: PieceExtraite, texte: str, nom_modele: str) -> Pr
     # inapplicable (section absente de la fiche courante) est rejetée
     # immédiatement, avant même l'affichage avant/après.
     for diff in proposition.diffs:
+        if diff.type == "modification_element":
+            try:
+                _resoudre_element(piece, diff.chemin or "")
+            except ErreurCorrection as e:
+                msg = f"L'assistant propose une modification d'élément impossible : {e}"
+                raise ErreurCorrection(msg) from e
+            continue
         if diff.type == "ajout_element":
             if (diff.chemin or "") not in LISTES_ENRICHISSABLES:
                 msg = f"L'assistant propose une liste non enrichissable : {diff.chemin!r}."
