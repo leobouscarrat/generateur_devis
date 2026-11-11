@@ -56,6 +56,21 @@ def piece_support() -> PieceExtraite:
     )
 
 
+def test_chemin_inapplicable_rejete_avant_affichage(monkeypatch):
+    """Cas réel du test utilisateur : pli non extrait → profil_pliage null →
+    le diff sur profil_pliage.rayon_pliage_general est rejeté avant affichage
+    (et non après acceptation, avec « section absente »)."""
+    piece = piece_support().model_copy(update={"profil_pliage": None})
+    _bouchon_modele(monkeypatch, {
+        "diffs": [
+            {"type": "remplacement", "chemin": "profil_pliage.rayon_pliage_general",
+             "nouvelle_valeur": 2.0, "justification": "rayon 2 mm sur le plan"}
+        ]
+    })
+    with pytest.raises(ErreurCorrection, match="inapplicable"):
+        proposer_correction(piece, "1 pli à 90°, rayon 2 mm", "test")
+
+
 def _bouchon_modele(monkeypatch, payload: dict | str):
     """Remplace creer_modele par un modèle renvoyant une réponse fixe."""
 

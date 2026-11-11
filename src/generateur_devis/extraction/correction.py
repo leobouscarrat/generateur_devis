@@ -167,10 +167,22 @@ def proposer_correction(piece: PieceExtraite, texte: str, nom_modele: str) -> Pr
     except (ValidationError, ValueError) as e:
         msg = "Réponse de l'assistant illisible — reformulez la correction."
         raise ErreurCorrection(msg) from e
-    # Validation précoce des chemins : une proposition hors whitelist est
-    # rejetée immédiatement, avant même l'affichage avant/après.
+    # Validation précoce des chemins : une proposition hors whitelist ou
+    # inapplicable (section absente de la fiche courante) est rejetée
+    # immédiatement, avant même l'affichage avant/après.
     for diff in proposition.diffs:
-        if diff.type == "remplacement" and diff.chemin not in CHEMINS_AUTORISES:
+        if diff.type != "remplacement":
+            continue
+        if diff.chemin not in CHEMINS_AUTORISES:
             msg = f"L'assistant propose un chemin non autorisé : {diff.chemin!r}."
             raise ErreurCorrection(msg)
+        cible: Any = piece
+        for segment in (diff.chemin or "").split(".")[:-1]:
+            cible = getattr(cible, segment, None)
+            if cible is None:
+                msg = (
+                    f"L'assistant propose un chemin inapplicable : {diff.chemin!r} "
+                    "(section absente de la fiche courante)."
+                )
+                raise ErreurCorrection(msg)
     return proposition
