@@ -242,6 +242,16 @@ def _trouver_ligne(table: str, ligne_id: str, session: Session):
 
 def _coercer(table: str, champ: str, valeur: Any) -> Any:
     type_attendu = REFERENTIELS_MODIFIABLES[table].champs[champ]
+    if type_attendu is bool:
+        # bool("false") vaut True : les chaînes sont gérées explicitement.
+        if isinstance(valeur, str):
+            if valeur.lower() in ("true", "vrai", "oui", "1"):
+                return True
+            if valeur.lower() in ("false", "faux", "non", "0"):
+                return False
+            msg = f"Valeur incompatible pour {table}.{champ} : {valeur!r}."
+            raise ErreurAdmin(msg)
+        return bool(valeur)
     try:
         return type_attendu(valeur)
     except (TypeError, ValueError) as e:

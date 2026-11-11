@@ -208,6 +208,19 @@ def test_refus_aucune_ecriture(session):
     del proposition
 
 
+def test_coercition_bool_chaine(session):
+    """« false » en chaîne doit donner False — bool(\"false\") vaut True sinon."""
+    proposition = PropositionAdmin(modifications=[ModificationAdmin(
+        type="mise_a_jour", table="epaisseurs_dispo", ligne_id="S235JR|2.0",
+        champ="en_stock", valeur="false", justification="rupture",
+    )])
+    proposition.appliquer("acheteur", session)
+    from generateur_devis.data.tables import EpaisseurDispo
+
+    ligne = session.get(EpaisseurDispo, {"matiere_id": "S235JR", "epaisseur_mm": 2.0})
+    assert ligne.en_stock is False
+
+
 def test_cle_composite(session):
     """Clé composite sérialisée ``matiere|epaisseur`` (epaisseurs_dispo)."""
     proposition = PropositionAdmin(modifications=[ModificationAdmin(
