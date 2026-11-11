@@ -20,6 +20,19 @@ class ErreurAudit(ValueError):
     """Enregistrement d'audit invalide (ex. auteur manquant)."""
 
 
+def _serialiser(valeur: Any) -> str | None:
+    """Sérialisation exacte : l'audit conserve la valeur, l'affichage arrondit.
+
+    Les floats passent par ``repr`` (17 chiffres significatifs — 1.10 reste
+    1.1 mais 0.30000000000000004 reste exact).
+    """
+    if valeur is None:
+        return None
+    if isinstance(valeur, float):
+        return repr(valeur)
+    return str(valeur)
+
+
 def enregistrer_modification(
     table_nom: str,
     ligne_id: str,
@@ -54,8 +67,8 @@ def enregistrer_modification(
         table_nom=table_nom,
         ligne_id=ligne_id,
         champ=champ,
-        valeur_avant=None if avant is None else str(avant),
-        valeur_apres=None if apres is None else str(apres),
+        valeur_avant=_serialiser(avant),
+        valeur_apres=_serialiser(apres),
         auteur=auteur.strip(),
     )
     session.add(ligne)
