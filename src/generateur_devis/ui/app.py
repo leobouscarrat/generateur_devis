@@ -457,7 +457,7 @@ def _editer_piece(
     Streamlit ré-exécute le script à chaque modification : le recalcul est
     donc immédiat (§4).
     """
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
     with col1:
         matiere_defaut = piece.matiere.designation.valeur
         libelles = list(choix_matieres)
@@ -477,6 +477,27 @@ def _editer_piece(
             min_value=1.0,
             value=float(piece.encombrement.largeur.valeur or 50.0),
             step=5.0,
+        )
+    with col4:
+        # Rayon général : cote du plan si extraite, sinon défaut atelier
+        # administrable (paramètre rayon_pliage_defaut_mm) — jamais de blocage.
+        rayon_extrait = (
+            piece.profil_pliage.rayon_pliage_general if piece.profil_pliage else None
+        )
+        if rayon_extrait is not None:
+            rayon_defaut = float(rayon_extrait)
+        else:
+            with get_session() as session:
+                rayon_defaut = float(get_parametre("rayon_pliage_defaut_mm", session))
+        rayon_general = st.number_input(
+            "Rayon de pliage général (mm)",
+            min_value=0.1,
+            value=rayon_defaut,
+            step=0.5,
+            help=(
+                "Utilisé pour tout pli sans cote de rayon. Pré-rempli depuis le plan, "
+                "sinon depuis le paramètre rayon_pliage_defaut_mm (administrable)."
+            ),
         )
 
     lignes_profil = []
@@ -541,9 +562,7 @@ def _editer_piece(
     if elements:
         editee.profil_pliage = ProfilPliage(
             cotation=piece.profil_pliage.cotation if piece.profil_pliage else "exterieure",
-            rayon_pliage_general=(
-                piece.profil_pliage.rayon_pliage_general if piece.profil_pliage else None
-            ),
+            rayon_pliage_general=rayon_general,
             elements=elements,
         )
     editee.contours.trous = trous
