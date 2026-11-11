@@ -87,10 +87,19 @@ Règles :
    - "remplacement" : modifier un champ parmi cette liste FERMÉE (aucun autre chemin) :
      matiere.designation.valeur (texte, ex. "DC01"), matiere.epaisseur.valeur (nombre, mm),
      encombrement.largeur.valeur (nombre, mm), profil_pliage.rayon_pliage_general (nombre, mm) ;
-   - "ajout_composant" : ajouter un composant de nomenclature ; "chemin" vaut null et
-     "nouvelle_valeur" est un objet {"designation": ..., "type": ..., "filetage": ...,
-     "quantite": ...} avec type parmi ecrou_a_sertir, goujon_a_sertir, entretoise_a_sertir,
-     insert, rivet, autre ;
+   - "ajout_element" : ajouter un élément à une liste de la fiche ; "chemin" vaut le
+     nom de la liste (liste FERMÉE) et "nouvelle_valeur" est l'objet de l'élément :
+       * "composants" : {"designation": ..., "type": ..., "filetage": ..., "quantite": ...}
+         avec type parmi ecrou_a_sertir, goujon_a_sertir, entretoise_a_sertir, insert,
+         rivet, autre ;
+       * "contours.trous" : {"forme": "rond"|"oblong"|"carre"|"rectangulaire"|"autre",
+         "diametre": nombre|null, "longueur": nombre|null, "largeur": nombre|null,
+         "quantite": entier} ;
+       * "contours.coins" : {"type": "chanfrein"|"rayon", "cote1": nombre|null,
+         "cote2": nombre|null, "rayon": nombre|null, "quantite": entier} ;
+       * "soudures" : {"procede": "mig_mag"|"tig"|"points"|"autre"|"inconnu",
+         "type_joint": "angle"|"bout_a_bout"|"bouchon"|"autre"|"inconnu",
+         "quantite": entier} ;
    - "creation_section" : créer d'un bloc une section ABSENTE (null) de la fiche ;
      seule section créable : "profil_pliage" (chemin = "profil_pliage") ;
      "nouvelle_valeur" est l'objet complet {"cotation": "exterieure"|"interieure",

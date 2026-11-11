@@ -26,10 +26,25 @@ from generateur_devis.extraction.prompt import (
 )
 from generateur_devis.llm import creer_modele
 from generateur_devis.llm.base import ErreurModele
-from generateur_devis.schema.piece import Composant, PieceExtraite, ProfilPliage
+from generateur_devis.schema.piece import (
+    CoinCoupe,
+    Composant,
+    PieceExtraite,
+    ProfilPliage,
+    Soudure,
+    Trou,
+)
 
 SECTIONS_CREABLES: dict[str, type] = {"profil_pliage": ProfilPliage}
 """Sections absentes que l'assistant peut créer d'un bloc (objet complet)."""
+
+LISTES_ENRICHISSABLES: dict[str, type] = {
+    "composants": Composant,
+    "contours.trous": Trou,
+    "contours.coins": CoinCoupe,
+    "soudures": Soudure,
+}
+"""Listes auxquelles l'assistant peut ajouter un élément (``ajout_element``)."""
 
 CHEMINS_AUTORISES: dict[str, type] = {
     "matiere.designation.valeur": str,
@@ -48,7 +63,7 @@ class DiffCorrection(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    type: Literal["remplacement", "ajout_composant", "creation_section"]
+    type: Literal["remplacement", "ajout_composant", "creation_section", "ajout_element"]
     chemin: str | None = None
     nouvelle_valeur: Any
     justification: str = ""
@@ -100,7 +115,8 @@ class PropositionCorrection(BaseModel):
                     (diff.chemin or "", "— (absente)", str(diff.nouvelle_valeur), diff.justification)
                 )
             else:
-                lignes.append(("composants", "—", str(diff.nouvelle_valeur), diff.justification))
+                etiquettes = diff.chemin or "composants"
+                lignes.append((etiquettes, "—", str(diff.nouvelle_valeur), diff.justification))
         return lignes
 
 
@@ -145,7 +161,20 @@ def _appliquer_diff(piece: PieceExtraite, diff: DiffCorrection) -> None:
         except ValidationError as e:
             msg = f"Section invalide : {e.errors()[0]['msg']}."
             raise ErreurCorrection(msg) from e
-    else:  # ajout_composant
+    elif diff.type == "ajout_element":
+        chemin_liste = diff.chemin or ""
+        modele_element = LISTES_ENRICHISSABLES.get(chemin_liste)
+        if modele_element is None:
+            msg = f"Liste non enrichissable : {chemin_liste!r}."
+            raise ErreurCorrection(msg)
+        try:
+            element = modele_element.model_validate(diff.nouvelle_valeur)
+        except ValidationError as e:
+            msg = f"Élément invalide : {e.errors()[0]['msg']}."
+            raise ErreurCorrection(msg) from e
+        liste = _lire_chemin(piece, chemin_liste)
+        liste.append(element)
+    else:  # ajout_composant (conservé pour compatibilité ; ajout_element le généralise)
         try:
             composant = Composant.model_validate(diff.nouvelle_valeur)
         except ValidationError as e:
@@ -191,6 +220,11 @@ def proposer_correction(piece: PieceExtraite, texte: str, nom_modele: str) -> Pr
     # inapplicable (section absente de la fiche courante) est rejetée
     # immédiatement, avant même l'affichage avant/après.
     for diff in proposition.diffs:
+        if diff.type == "ajout_element":
+            if (diff.chemin or "") not in LISTES_ENRICHISSABLES:
+                msg = f"L'assistant propose une liste non enrichissable : {diff.chemin!r}."
+                raise ErreurCorrection(msg)
+            continue
         if diff.type == "creation_section":
             section = diff.chemin or ""
             if section not in SECTIONS_CREABLES:
