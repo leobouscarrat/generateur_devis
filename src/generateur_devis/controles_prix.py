@@ -120,6 +120,9 @@ def evaluer_controles_prix(
     # --- Écart avec l'historique, par palier (quantité proche ×½ à ×2) ------
     borne = bornes.get("ecart_historique_pct")
     if borne is not None:
+        # Une moyenne sur 1-2 devis ne veut rien dire : échantillon minimum
+        # administrable (paramètre ecart_historique_min_echantillon).
+        effectif_min = get_parametre("ecart_historique_min_echantillon", session)
         for palier in chiffrage.paliers:
             similaires = list_historique_similaires(
                 session,
@@ -127,7 +130,7 @@ def evaluer_controles_prix(
                 quantite_min=max(1, palier.quantite // 2),
                 quantite_max=palier.quantite * 2,
             )
-            if not similaires:
+            if len(similaires) < effectif_min:
                 continue
             moyenne = sum(h.cout_unitaire_eur for h in similaires) / len(similaires)
             if moyenne <= 0:
