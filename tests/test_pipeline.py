@@ -244,6 +244,8 @@ def test_pipeline_plan_en_pouces_converti_avant_geometrie(monkeypatch, session):
     assert resultat.flan.epaisseur_mm == pytest.approx(1.524)
     # Pas d'arrondi vers l'épaisseur du stock : la faisabilité bloque proprement.
     assert [c.regle for c in resultat.constats if c.severite == "blocage"] == ["epaisseur_dispo"]
+    blocage = next(c for c in resultat.constats if c.regle == "epaisseur_dispo")
+    assert blocage.message.startswith("Épaisseur 1.524 mm non disponible pour S235JR")
     assert resultat.chiffrage is None
     # Trace de la conversion.
     assert resultat.conversion.unite_origine == "in"

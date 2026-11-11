@@ -168,7 +168,8 @@ def test_ecran_plan_en_pouces_unite_et_valeurs_converties():
     assert "Rayon de pliage général (mm) : lu sur le plan : 0,08 in → 2,03 mm." in captions
 
     # 1,524 mm n'est pas au stock : signalé par la faisabilité, jamais corrigé.
-    assert any("Épaisseur 1.52" in e.value and "non disponible" in e.value for e in at.error)
+    # Message formaté (:g) : pas de bruit flottant « 1.5239999999999998 ».
+    assert any("Épaisseur 1.524 mm non disponible" in e.value for e in at.error)
 
 
 def test_ecran_valeur_modifiee_apres_conversion_plus_en_pouces():
