@@ -356,6 +356,8 @@ def get_parametre(cle: str, session: Session) -> str | float | int:
     Conversion TEXT → type Python selon la clé connue (8 clés seules) :
 
     - marge_defaut, rendement_calepinage, facteur_k  → float
+    - regle_diam_trou_min_e, regle_aile_min_e,
+      regle_rayon_min_e                              → float
     - minimum_commande_eur, validite_devis_jours      → int
     - paliers_quantite                                → list[int]
     - devise                                          → str
@@ -377,6 +379,9 @@ def get_parametre(cle: str, session: Session) -> str | float | int:
         "marge_defaut": float,
         "rendement_calepinage": float,
         "facteur_k": float,
+        "regle_diam_trou_min_e": float,
+        "regle_aile_min_e": float,
+        "regle_rayon_min_e": float,
         "minimum_commande_eur": int,
         "frais_structure_pct": int,
         "validite_devis_jours": int,
