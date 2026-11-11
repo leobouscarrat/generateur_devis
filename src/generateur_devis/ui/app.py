@@ -27,7 +27,12 @@ from generateur_devis.data.acces import (
     list_matieres,
 )
 from generateur_devis.data.db import get_session
-from generateur_devis.devis import Devis
+from generateur_devis.devis import Devis, Modification
+from generateur_devis.extraction.correction import (
+    ErreurCorrection,
+    PropositionCorrection,
+    proposer_correction,
+)
 from generateur_devis.modele3d import ErreurGeometrie, construire_modele_3d
 from generateur_devis.schema.piece import (
     Aile,
@@ -44,6 +49,87 @@ TYPES_PLAN = ["pdf", "png", "jpg", "jpeg", "webp"]
 CLE_RESULTAT = "resultat_devis"
 CLE_DEVIS = "devis"
 CLE_CONTEXTE = "contexte"
+CLE_PIECE_CORRIGEE = "piece_corrigee"
+CLE_PROPOSITION = "proposition_correction"
+CLE_CORRECTIONS = "corrections_ia"
+
+
+def _journaliser_correction(texte: str, proposition: PropositionCorrection, issue: str) -> None:
+    """Accumule la correction proposée et son issue (injectée au Devis à la validation)."""
+    st.session_state.setdefault(CLE_CORRECTIONS, []).append(
+        {
+            "texte": texte,
+            "nb_modifications": len(proposition.diffs),
+            "issue": issue,  # acceptee | refusee
+        }
+    )
+
+
+def _ecran_assistant(piece: PieceExtraite) -> None:
+    """Assistant de correction en texte libre (issue #25, architecture §9).
+
+    L'IA propose un diff borné, affiché avant/après ; l'utilisateur accepte
+    ou refuse explicitement — aucun changement sans accord.
+    """
+    contexte = st.session_state.get(CLE_CONTEXTE, {})
+    nom_modele = contexte.get("nom_modele")
+
+    with st.expander("✏️ Corriger en texte libre (assistant IA)"):
+        proposition: PropositionCorrection | None = st.session_state.get(CLE_PROPOSITION)
+
+        if proposition is None:
+            texte = st.text_area(
+                "Décrivez la correction",
+                placeholder="Ex. « c'est de l'inox 2 mm avec 4 écrous M6 »",
+                key="texte_correction",
+            )
+            if st.button("Proposer une correction", disabled=not nom_modele or not texte.strip()):
+                try:
+                    with st.spinner("L'assistant analyse la correction…"):
+                        proposition = proposer_correction(piece, texte, nom_modele)
+                    st.session_state[CLE_PROPOSITION] = proposition
+                    st.session_state["texte_en_cours"] = texte
+                    st.rerun()
+                except ErreurCorrection as e:
+                    st.error(str(e))
+            return
+
+        # --- Affichage avant / après ------------------------------------------
+        st.caption(f"Correction : « {st.session_state.get('texte_en_cours', '')} »")
+        if proposition.remarque:
+            st.info(f"💬 {proposition.remarque}")
+        st.table(
+            {
+                "Champ": [c for c, _, _, _ in proposition.ligne_avant_apres(piece)],
+                "Avant": [a for _, a, _, _ in proposition.ligne_avant_apres(piece)],
+                "Après": [b for _, _, b, _ in proposition.ligne_avant_apres(piece)],
+                "Justification": [j for _, _, _, j in proposition.ligne_avant_apres(piece)],
+            }
+        )
+        try:
+            piece_apres = proposition.appliquer(piece)
+            for probleme in piece_apres.problemes_coherence():
+                st.warning(f"⚠️ Après application : {probleme}")
+        except ErreurCorrection as e:
+            st.error(f"Correction inapplicable : {e}")
+            piece_apres = None
+
+        col_ok, col_non = st.columns(2)
+        with col_ok:
+            if st.button("✅ Accepter", disabled=piece_apres is None):
+                st.session_state[CLE_PIECE_CORRIGEE] = piece_apres
+                _journaliser_correction(
+                    st.session_state.get("texte_en_cours", ""), proposition, "acceptee"
+                )
+                st.session_state.pop(CLE_PROPOSITION, None)
+                st.rerun()
+        with col_non:
+            if st.button("❌ Refuser"):
+                _journaliser_correction(
+                    st.session_state.get("texte_en_cours", ""), proposition, "refusee"
+                )
+                st.session_state.pop(CLE_PROPOSITION, None)
+                st.rerun()
 
 
 def _champs_peu_surs(piece: PieceExtraite, session) -> list[str]:
@@ -128,7 +214,11 @@ def ecran_depot() -> ResultatDevis | None:
                 session,
             )
         st.session_state[CLE_RESULTAT] = resultat
-        st.session_state[CLE_CONTEXTE] = {"client_id": client_id, "quantites": quantites}
+        st.session_state[CLE_CONTEXTE] = {
+            "client_id": client_id,
+            "quantites": quantites,
+            "nom_modele": nom_modele,
+        }
         st.rerun()
 
     return st.session_state.get(CLE_RESULTAT)
@@ -300,14 +390,18 @@ def ecran_validation() -> None:
     """Écran 2 : validation humaine — anomalies en tête, 3D, recalcul immédiat."""
     st.title("Validation de la pièce")
     resultat_initial: ResultatDevis = st.session_state[CLE_RESULTAT]
-    piece = resultat_initial.piece
-    if piece is None:
+    piece_extraite = resultat_initial.piece
+    if piece_extraite is None:
         st.error(resultat_initial.erreur or "Aucune pièce extraite.")
         if st.button("Retour au dépôt"):
             st.session_state.pop(CLE_RESULTAT, None)
             st.rerun()
         return
+    # La pièce corrigée par l'assistant (acceptations précédentes) fait foi.
+    piece: PieceExtraite = st.session_state.get(CLE_PIECE_CORRIGEE) or piece_extraite
     contexte = st.session_state.get(CLE_CONTEXTE, {})
+
+    _ecran_assistant(piece)
 
     with get_session() as session:
         matieres = [m.id for m in list_matieres(session)]
@@ -403,6 +497,20 @@ def ecran_validation() -> None:
                 date_creation=datetime.now(),
             )
             devis.valider(auteur)
+            # Journal des corrections de l'assistant (proposées et leur issue).
+            for correction in st.session_state.get(CLE_CORRECTIONS, []):
+                devis.modifications.append(
+                    Modification(
+                        auteur=auteur,
+                        date=datetime.now(),
+                        champ="correction_ia",
+                        avant=correction["texte"],
+                        apres=(
+                            f"{correction['issue']} "
+                            f"({correction['nb_modifications']} modification(s))"
+                        ),
+                    )
+                )
             st.session_state[CLE_DEVIS] = devis
             st.rerun()
 
