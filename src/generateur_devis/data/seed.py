@@ -202,6 +202,9 @@ _PARAMETRES_DEFAUT: dict[str, Any] = {
     "regle_diam_trou_min_e": "1.0",
     "regle_aile_min_e": "4.0",
     "regle_rayon_min_e": "1.0",
+    # Postes utilisés par le moteur de chiffrage (identifiants de la table postes)
+    "poste_decoupe": "LASER_3KW",
+    "poste_pliage": "PLIEUSE_CN",
 }
 
 # ---------------------------------------------------------------------------
