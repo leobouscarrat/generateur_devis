@@ -56,6 +56,75 @@ def piece_support() -> PieceExtraite:
     )
 
 
+PROFIL_A_CREER = {
+    "cotation": "exterieure",
+    "rayon_pliage_general": 2.0,
+    "elements": [
+        {"type": "aile", "longueur": 42.0},
+        {"type": "pli", "angle": 90.0, "sens": "haut"},
+        {"type": "aile", "longueur": 22.0},
+    ],
+}
+
+
+def test_creation_section_profil_pliage_absent(monkeypatch):
+    """Pli non extrait → le texte décrit le profil → l'assistant crée la section."""
+    piece = piece_support().model_copy(update={"profil_pliage": None})
+    _bouchon_modele(monkeypatch, {
+        "diffs": [
+            {"type": "creation_section", "chemin": "profil_pliage",
+             "nouvelle_valeur": PROFIL_A_CREER,
+             "justification": "1 pli 90° haut, rayon 2 mm, cotes extérieures"}
+        ]
+    })
+    proposition = proposer_correction(piece, "1 pli à 90° sens haut, rayon 2 mm, cotes extérieures", "test")
+    lignes = proposition.ligne_avant_apres(piece)
+    assert lignes[0][1] == "— (absente)"
+
+    corrigee = proposition.appliquer(piece)
+    assert corrigee.profil_pliage is not None
+    assert corrigee.profil_pliage.rayon_pliage_general == 2.0
+    assert len(corrigee.profil_pliage.elements) == 3
+    assert piece.profil_pliage is None  # l'originale n'est jamais modifiée
+
+
+def test_creation_section_deja_presente_rejetee(monkeypatch):
+    """Créer une section déjà présente est rejeté avant affichage."""
+    _bouchon_modele(monkeypatch, {
+        "diffs": [
+            {"type": "creation_section", "chemin": "profil_pliage",
+             "nouvelle_valeur": PROFIL_A_CREER, "justification": "?"}
+        ]
+    })
+    with pytest.raises(ErreurCorrection, match="existe déjà"):
+        proposer_correction(piece_support(), "refais le profil", "test")
+
+
+def test_creation_section_non_creable_rejetee(monkeypatch):
+    _bouchon_modele(monkeypatch, {
+        "diffs": [
+            {"type": "creation_section", "chemin": "contours",
+             "nouvelle_valeur": {}, "justification": "?"}
+        ]
+    })
+    with pytest.raises(ErreurCorrection, match="non créable"):
+        proposer_correction(piece_support(), "refais les contours", "test")
+
+
+def test_creation_section_objet_invalide_rejete_a_l_application():
+    """Un objet de section invalide est rejeté (aile de longueur négative)."""
+    piece = piece_support().model_copy(update={"profil_pliage": None})
+    proposition = PropositionCorrection(diffs=[DiffCorrection(
+        type="creation_section", chemin="profil_pliage",
+        nouvelle_valeur={"cotation": "exterieure", "elements": [
+            {"type": "aile", "longueur": -5.0}
+        ]},
+        justification="?",
+    )])
+    with pytest.raises(ErreurCorrection, match="invalide"):
+        proposition.appliquer(piece)
+
+
 def test_chemin_inapplicable_rejete_avant_affichage(monkeypatch):
     """Cas réel du test utilisateur : pli non extrait → profil_pliage null →
     le diff sur profil_pliage.rayon_pliage_general est rejeté avant affichage

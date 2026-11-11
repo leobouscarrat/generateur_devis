@@ -90,12 +90,19 @@ Règles :
    - "ajout_composant" : ajouter un composant de nomenclature ; "chemin" vaut null et
      "nouvelle_valeur" est un objet {"designation": ..., "type": ..., "filetage": ...,
      "quantite": ...} avec type parmi ecrou_a_sertir, goujon_a_sertir, entretoise_a_sertir,
-     insert, rivet, autre.
+     insert, rivet, autre ;
+   - "creation_section" : créer d'un bloc une section ABSENTE (null) de la fiche ;
+     seule section créable : "profil_pliage" (chemin = "profil_pliage") ;
+     "nouvelle_valeur" est l'objet complet {"cotation": "exterieure"|"interieure",
+     "rayon_pliage_general": nombre|null, "elements": [...]} où chaque élément est
+     {"type": "aile", "longueur": nombre} ou {"type": "pli", "angle": nombre,
+     "sens": "haut"|"bas"}.
 3. Chaque modification porte une justification courte (ce que tu as compris du texte).
 4. Un remplacement n'est possible que si la **section existe déjà** dans la fiche \
 courante : si « profil_pliage » vaut null, ne propose PAS \
-profil_pliage.rayon_pliage_general — signale en "remarque" que la section doit \
-être créée (hors de ce diff). Même règle pour matiere et encombrement.
+profil_pliage.rayon_pliage_general — utilise "creation_section" si le texte décrit \
+le profil complet (pli, angle, sens, ailes, cotation), sinon signale en "remarque" \
+ce qui manque. Même règle pour matiere et encombrement (non créables).
 5. Si le texte demande une suppression ou une modification hors de ces cas, ne la mets pas \
 dans le diff : signale-la dans une clé "remarque" à la racine.
 6. Si le texte est ambigu, propose ce que tu comprends et explique-le dans la justification.
