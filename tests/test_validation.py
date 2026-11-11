@@ -192,3 +192,39 @@ def test_valider_lignes_zero_est_invalide_mais_ne_plante_pas():
     )
     assert len(erreurs) == 1
     assert "aile" in erreurs[0]
+
+
+def test_valider_lignes_trou_oblong_sans_dimensions():
+    """Cas utilisateur : un oblong sans longueur/largeur est refusé au formulaire
+    (avant : le blocage survenait plus loin, au calcul du flan)."""
+    erreurs = _valider_lignes(
+        [], [{"forme": "oblong", "diametre": None, "longueur": None,
+              "largeur": None, "quantite": 4}]
+    )
+    assert len(erreurs) == 1
+    assert "longueur" in erreurs[0] and "oblong" in erreurs[0]
+
+
+def test_valider_lignes_trou_oblong_complet():
+    erreurs = _valider_lignes(
+        [], [{"forme": "oblong", "diametre": None, "longueur": 20.0,
+              "largeur": 8.0, "quantite": 4}]
+    )
+    assert erreurs == []
+
+
+def test_valider_lignes_trou_oblong_longueur_inferieure_largeur():
+    erreurs = _valider_lignes(
+        [], [{"forme": "oblong", "diametre": None, "longueur": 8.0,
+              "largeur": 20.0, "quantite": 1}]
+    )
+    assert any("longueur > largeur" in e for e in erreurs)
+
+
+def test_valider_lignes_trou_forme_autre_refusee():
+    """« autre » a une aire indéterminable — refusé au formulaire, pas au flan."""
+    erreurs = _valider_lignes(
+        [], [{"forme": "autre", "diametre": 5.0, "longueur": None,
+              "largeur": None, "quantite": 1}]
+    )
+    assert any("autre" in e for e in erreurs)
