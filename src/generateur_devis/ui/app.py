@@ -215,6 +215,12 @@ def _ecran_restitution() -> None:
                 devis.changer_marge(devis.auteur or "inconnu", marge)
                 st.rerun()
 
+    # --- Vue interne : alertes (contrôles prix, comparaison historique) ----------
+    resultat_initial: ResultatDevis | None = st.session_state.get(CLE_RESULTAT)
+    if resultat_initial:
+        for alerte in resultat_initial.alertes_controles:
+            st.warning(f"⚖️ Contrôle prix ({alerte.regle}) : {alerte.message}")
+
     # --- Vue interne : tracé complet ---------------------------------------------
     with st.expander("🔍 Vue interne — tracé du calcul"):
         st.write(
@@ -244,7 +250,9 @@ def _ecran_restitution() -> None:
                 emettre(devis, resultat.flan, devis.auteur or "inconnu", session)
                 session.commit()
             st.session_state["pdf_client"] = generer_pdf_client(
-                devis, int(get_parametre("validite_devis_jours", session))
+                devis,
+                int(get_parametre("validite_devis_jours", session)),
+                str(get_parametre("conditions_generales", session)),
             )
             st.rerun()
     if "pdf_client" in st.session_state:

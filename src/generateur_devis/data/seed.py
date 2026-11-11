@@ -199,6 +199,7 @@ _PARAMETRES_DEFAUT: dict[str, Any] = {
     "paliers_quantite": "1, 10, 100, 1000",
     "devise": "EUR",
     "validite_devis_jours": "30",
+    "conditions_generales": "Prix HT, départ atelier.",
     # Seuils des règles de faisabilité (multiples de l'épaisseur, §3b architecture)
     "regle_diam_trou_min_e": "1.0",
     "regle_aile_min_e": "4.0",

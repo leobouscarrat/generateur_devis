@@ -27,13 +27,14 @@ def _ligne(pdf: FPDF, libelle: str, valeur: str) -> None:
     pdf.cell(0, 7, valeur, new_x="LMARGIN", new_y="NEXT")
 
 
-def generer_pdf_client(devis: Devis, validite_jours: int) -> bytes:
+def generer_pdf_client(devis: Devis, validite_jours: int, conditions: str) -> bytes:
     """Génère le PDF de la vue client d'un devis.
 
     Args:
         devis: devis validé ou émis (les prix sont figés à la validation).
         validite_jours: durée de validité (paramètre ``validite_devis_jours``
             — aucune valeur en dur, fournie par l'appelant).
+        conditions: conditions générales (paramètre ``conditions_generales``).
 
     Returns:
         Le contenu du PDF en bytes.
@@ -107,5 +108,10 @@ def generer_pdf_client(devis: Devis, validite_jours: int) -> bytes:
                 new_x="LMARGIN",
                 new_y="NEXT",
             )
+
+    # --- Conditions générales ----------------------------------------------------
+    pdf.ln(4)
+    pdf.set_font("helvetica", "I", 9)
+    pdf.multi_cell(0, 5, conditions)
 
     return bytes(pdf.output())

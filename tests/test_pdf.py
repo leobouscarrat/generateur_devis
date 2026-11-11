@@ -95,14 +95,14 @@ def _texte_pdf(contenu: bytes) -> str:
 
 
 def test_pdf_est_un_document_valide(session):
-    contenu = generer_pdf_client(devis_test(session), validite_jours=30)
+    contenu = generer_pdf_client(devis_test(session), validite_jours=30, conditions="Prix HT.")
     assert contenu.startswith(b"%PDF")
     assert len(contenu) > 500
 
 
 def test_pdf_contient_la_vue_client(session):
     devis = devis_test(session)
-    texte = _texte_pdf(generer_pdf_client(devis, validite_jours=30))
+    texte = _texte_pdf(generer_pdf_client(devis, validite_jours=30, conditions="Prix HT."))
     assert "D-2026-0001" in texte
     assert "Support" in texte
     assert "SUP-01" in texte
@@ -120,7 +120,7 @@ def test_pdf_contient_la_vue_client(session):
 def test_pdf_ne_divulgue_aucun_cout_ni_marge(session):
     """Vue client : les coûts bruts et la marge ne sortent jamais (§6)."""
     devis = devis_test(session)
-    texte = _texte_pdf(generer_pdf_client(devis, validite_jours=30))
+    texte = _texte_pdf(generer_pdf_client(devis, validite_jours=30, conditions="Prix HT."))
     for palier in devis.chiffrage.paliers:
         assert f"{palier.cout_unitaire_eur:.2f}" not in texte
     assert "marge" not in texte.lower()
@@ -130,5 +130,5 @@ def test_pdf_ne_divulgue_aucun_cout_ni_marge(session):
 def test_pdf_option_minimum_de_lot(session):
     """À Q=1, l'option est au minimum de lot : max(0.40, 25 ÷ 1) = 25 €."""
     devis = devis_test(session).model_copy(update={"quantite_commandee": 1})
-    texte = _texte_pdf(generer_pdf_client(devis, validite_jours=30))
+    texte = _texte_pdf(generer_pdf_client(devis, validite_jours=30, conditions="Prix HT."))
     assert "25.00" in texte
