@@ -26,7 +26,10 @@ from generateur_devis.extraction.prompt import (
 )
 from generateur_devis.llm import creer_modele
 from generateur_devis.llm.base import ErreurModele
-from generateur_devis.schema.piece import Composant, PieceExtraite
+from generateur_devis.schema.piece import Composant, PieceExtraite, ProfilPliage
+
+SECTIONS_CREABLES: dict[str, type] = {"profil_pliage": ProfilPliage}
+"""Sections absentes que l'assistant peut créer d'un bloc (objet complet)."""
 
 CHEMINS_AUTORISES: dict[str, type] = {
     "matiere.designation.valeur": str,
@@ -35,7 +38,6 @@ CHEMINS_AUTORISES: dict[str, type] = {
     "profil_pliage.rayon_pliage_general": float,
 }
 """Chemins modifiables par l'assistant (remplacement scalaire uniquement)."""
-
 
 class ErreurCorrection(Exception):
     """Proposition ou application de correction invalide (message lisible)."""
@@ -46,7 +48,7 @@ class DiffCorrection(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    type: Literal["remplacement", "ajout_composant"]
+    type: Literal["remplacement", "ajout_composant", "creation_section"]
     chemin: str | None = None
     nouvelle_valeur: Any
     justification: str = ""
@@ -93,6 +95,10 @@ class PropositionCorrection(BaseModel):
                 lignes.append(
                     (diff.chemin or "", str(avant), str(diff.nouvelle_valeur), diff.justification)
                 )
+            elif diff.type == "creation_section":
+                lignes.append(
+                    (diff.chemin or "", "— (absente)", str(diff.nouvelle_valeur), diff.justification)
+                )
             else:
                 lignes.append(("composants", "—", str(diff.nouvelle_valeur), diff.justification))
         return lignes
@@ -125,6 +131,20 @@ def _appliquer_diff(piece: PieceExtraite, diff: DiffCorrection) -> None:
                 msg = f"Chemin inapplicable (section absente) : {chemin}."
                 raise ErreurCorrection(msg)
         setattr(cible, segments[-1], valeur)
+    elif diff.type == "creation_section":
+        section = diff.chemin or ""
+        modele_section = SECTIONS_CREABLES.get(section)
+        if modele_section is None:
+            msg = f"Section non créable : {section!r}."
+            raise ErreurCorrection(msg)
+        if getattr(piece, section, None) is not None:
+            msg = f"Section déjà présente : {section} — utilisez un remplacement."
+            raise ErreurCorrection(msg)
+        try:
+            setattr(piece, section, modele_section.model_validate(diff.nouvelle_valeur))
+        except ValidationError as e:
+            msg = f"Section invalide : {e.errors()[0]['msg']}."
+            raise ErreurCorrection(msg) from e
     else:  # ajout_composant
         try:
             composant = Composant.model_validate(diff.nouvelle_valeur)
@@ -171,6 +191,18 @@ def proposer_correction(piece: PieceExtraite, texte: str, nom_modele: str) -> Pr
     # inapplicable (section absente de la fiche courante) est rejetée
     # immédiatement, avant même l'affichage avant/après.
     for diff in proposition.diffs:
+        if diff.type == "creation_section":
+            section = diff.chemin or ""
+            if section not in SECTIONS_CREABLES:
+                msg = f"L'assistant propose une section non créable : {section!r}."
+                raise ErreurCorrection(msg)
+            if getattr(piece, section, None) is not None:
+                msg = (
+                    f"L'assistant propose de créer {section!r} alors que la section "
+                    "existe déjà dans la fiche courante."
+                )
+                raise ErreurCorrection(msg)
+            continue
         if diff.type != "remplacement":
             continue
         if diff.chemin not in CHEMINS_AUTORISES:
