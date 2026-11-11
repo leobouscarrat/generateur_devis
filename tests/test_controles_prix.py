@@ -134,34 +134,48 @@ def test_alerte_prix_matiere_ancien(session, flan_003):
     assert "prix_matiere_ancien" in _regles(constats)
 
 
-def test_alerte_ecart_historique(session, chiffrage_003, flan_003):
-    """Un devis similaire très cher dans l'historique déclenche l'écart."""
-    session.add(
-        HistoriqueDevis(
-            id="D-TEST-0001",
-            date=date.today(),
-            client_id=None,
-            reference_piece="Support test",
-            designation="Support test",
-            matiere_id=MATIERE,
-            epaisseur_mm=2.0,
-            flan_l_mm=75.0,
-            flan_w_mm=60.0,
-            masse_kg=0.07,
-            longueur_coupe_mm=343.0,
-            nb_trous=4,
-            nb_plis=2,
-            nb_composants=2,
-            traitement_id=None,
-            quantite=100,
-            cout_unitaire_eur=10.0,  # 4,5× le coût de piece_support → écart > 30 %
-            prix_unitaire_eur=13.0,
-            statut="accepte",
-        )
+def _devis_similaire(indice: int, cout: float) -> HistoriqueDevis:
+    return HistoriqueDevis(
+        id=f"D-TEST-{indice:04d}",
+        date=date.today(),
+        client_id=None,
+        reference_piece="Support test",
+        designation="Support test",
+        matiere_id=MATIERE,
+        epaisseur_mm=2.0,
+        flan_l_mm=75.0,
+        flan_w_mm=60.0,
+        masse_kg=0.07,
+        longueur_coupe_mm=343.0,
+        nb_trous=4,
+        nb_plis=2,
+        nb_composants=2,
+        traitement_id=None,
+        quantite=100,
+        cout_unitaire_eur=cout,
+        prix_unitaire_eur=cout * 1.3,
+        statut="accepte",
     )
+
+
+def test_alerte_ecart_historique(session, chiffrage_003, flan_003):
+    """Assez de devis similaires très chers dans l'historique déclenche l'écart."""
+    for i in range(3):
+        session.add(_devis_similaire(i + 1, 10.0))  # ~4,5× le coût → écart > 30 %
     session.flush()
     constats = evaluer_controles_prix(chiffrage_003, piece_support(), flan_003, MATIERE, session)
     assert "ecart_historique" in _regles(constats)
+
+
+def test_ecart_historique_echantillon_trop_petit(session, chiffrage_003, flan_003):
+    """1-2 devis similaires seulement → pas d'alerte : une « moyenne » sur un
+    échantillon pareil ne veut rien dire (paramètre min_echantillon = 3)."""
+    session.query(HistoriqueDevis).delete()  # on isole du seed simulé
+    for i in range(2):
+        session.add(_devis_similaire(i + 1, 10.0))
+    session.flush()
+    constats = evaluer_controles_prix(chiffrage_003, piece_support(), flan_003, MATIERE, session)
+    assert "ecart_historique" not in _regles(constats)
 
 
 def test_bornes_absentes_controles_ignores(session, chiffrage_003, flan_003):

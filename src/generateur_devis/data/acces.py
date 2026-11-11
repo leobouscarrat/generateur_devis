@@ -470,6 +470,7 @@ def get_parametre(cle: str, session: Session) -> str | float | int:
         "conditions_generales": str,
         "modele_extraction": str,
         "rayon_pliage_defaut_mm": float,
+        "ecart_historique_min_echantillon": int,
     }
 
     if cle not in _conversion:

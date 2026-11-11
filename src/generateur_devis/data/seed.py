@@ -207,6 +207,10 @@ _PARAMETRES_DEFAUT: dict[str, Any] = {
     # quand le plan ne cote aucun rayon (ni par pli, ni en note générale) —
     # règle atelier usuelle R ≈ épaisseur ; valeur administrable par l'agent.
     "rayon_pliage_defaut_mm": "1.0",
+    # Échantillon minimum de devis similaires pour que le contrôle
+    # ecart_historique s'applique — une « moyenne » sur 1-2 devis ne veut
+    # rien dire (l'historique seedé est simulé, pas issu du moteur).
+    "ecart_historique_min_echantillon": "3",
     # Seuils des règles de faisabilité (multiples de l'épaisseur, §3b architecture)
     "regle_diam_trou_min_e": "1.0",
     "regle_aile_min_e": "4.0",
