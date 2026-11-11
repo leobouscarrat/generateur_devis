@@ -26,7 +26,18 @@ from generateur_devis.schema.piece import (
     ProfilPliage,
     Trou,
 )
-from generateur_devis.ui.app import _valider_lignes
+from generateur_devis.ui.app import (
+    CLE_CONTEXTE,
+    CLE_CORRECTIONS,
+    CLE_PIECE_CORRIGEE,
+    CLE_PROPOSITION,
+    CLE_RESULTAT,
+    CLES_VALIDATION,
+    ValeurInitiale,
+    _valider_lignes,
+    revenir_au_depot,
+    valeur_initiale,
+)
 from generateur_devis.ui.pipeline import rechiffrer
 from generateur_devis.ui.rendu3d import maillage_vers_figure
 
@@ -228,3 +239,111 @@ def test_valider_lignes_trou_forme_autre_refusee():
               "largeur": None, "quantite": 1}]
     )
     assert any("autre" in e for e in erreurs)
+
+
+# --- Valeurs initiales des champs bornés (issue #58) -------------------------
+
+
+def test_valeur_initiale_lue_dans_les_bornes():
+    resultat = valeur_initiale("Épaisseur (mm)", 2.0, 0.1)
+    assert resultat.valeur == 2.0
+    assert resultat.origine == "plan"
+    assert "lu sur le plan" in resultat.explication
+
+
+def test_valeur_initiale_egale_au_minimum_acceptee():
+    resultat = valeur_initiale("Largeur d'encombrement (mm)", 1.0, 1.0)
+    assert resultat == ValeurInitiale(1.0, "plan", "Largeur d'encombrement (mm) : lu sur le plan.")
+
+
+def test_valeur_initiale_hors_bornes_cas_umaine():
+    resultat = valeur_initiale("Épaisseur (mm)", 0.06, 0.1)
+    assert resultat.valeur is None
+    assert resultat.origine == "hors_bornes"
+    assert "Épaisseur (mm)" in resultat.explication
+    assert "0,06 mm" in resultat.explication
+    assert "minimum 0,1 mm" in resultat.explication
+
+
+@pytest.mark.parametrize("lue", [0.0, -2.0, float("nan")])
+def test_valeur_initiale_nulle_negative_nan_hors_bornes(lue):
+    resultat = valeur_initiale("Largeur d'encombrement (mm)", lue, 1.0)
+    assert resultat.valeur is None  # jamais remplacée par le minimum
+    assert resultat.origine == "hors_bornes"
+    assert "minimum 1 mm" in resultat.explication
+
+
+def test_valeur_initiale_absente_sans_defaut_champ_vide():
+    resultat = valeur_initiale("Épaisseur (mm)", None, 0.1)
+    assert resultat.valeur is None
+    assert resultat.origine == "absente"
+    assert resultat.explication == "Épaisseur (mm) : non lu sur le plan, à saisir."
+
+
+def test_valeur_initiale_absente_avec_defaut():
+    resultat = valeur_initiale(
+        "Rayon de pliage général (mm)",
+        None,
+        0.1,
+        defaut=(2.0, "paramètre rayon_pliage_defaut_mm"),
+    )
+    assert resultat.valeur == 2.0
+    assert resultat.origine == "defaut"
+    assert "2 mm" in resultat.explication
+    assert "rayon_pliage_defaut_mm" in resultat.explication
+    assert "à confirmer" in resultat.explication
+
+
+def test_valeur_initiale_defaut_hors_bornes():
+    resultat = valeur_initiale(
+        "Rayon de pliage général (mm)",
+        None,
+        0.1,
+        defaut=(0.05, "paramètre rayon_pliage_defaut_mm"),
+    )
+    assert resultat.valeur is None
+    assert resultat.origine == "hors_bornes"
+    assert "0,05 mm" in resultat.explication
+    assert "minimum 0,1 mm" in resultat.explication
+    assert "rayon_pliage_defaut_mm" in resultat.explication
+
+
+def test_valeur_initiale_lue_prioritaire_sur_defaut():
+    resultat = valeur_initiale("Rayon de pliage général (mm)", 3.0, 0.1, defaut=(2.0, "paramètre"))
+    assert (resultat.valeur, resultat.origine) == (3.0, "plan")
+
+
+def test_valeur_initiale_lue_hors_bornes_ne_retombe_pas_sur_defaut():
+    """Une lecture aberrante est signalée, pas masquée par le défaut."""
+    resultat = valeur_initiale("Rayon de pliage général (mm)", 0.0, 0.1, defaut=(2.0, "paramètre"))
+    assert (resultat.valeur, resultat.origine) == (None, "hors_bornes")
+
+
+# --- Retour au dépôt (issue #58) ---------------------------------------------
+
+
+def test_revenir_au_depot_purge_l_etat_de_validation():
+    etat = {cle: "x" for cle in CLES_VALIDATION}
+    etat[CLE_CONTEXTE] = {"client_id": "C1"}
+    etat["autre"] = 1
+    revenir_au_depot(etat)
+    assert etat == {CLE_CONTEXTE: {"client_id": "C1"}, "autre": 1}
+
+
+def test_revenir_au_depot_cles_absentes_sans_erreur():
+    etat = {CLE_RESULTAT: "r"}
+    revenir_au_depot(etat)
+    assert etat == {}
+
+
+def test_cles_validation_couvrent_etat_et_editeurs():
+    assert set(CLES_VALIDATION) == {
+        CLE_RESULTAT,
+        CLE_PIECE_CORRIGEE,
+        CLE_PROPOSITION,
+        CLE_CORRECTIONS,
+        "texte_en_cours",
+        "texte_correction",
+        "editeur_profil",
+        "editeur_trous",
+    }

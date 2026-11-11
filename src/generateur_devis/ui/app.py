@@ -13,7 +13,10 @@ from __future__ import annotations
 import math
 import os
 import uuid
+from collections.abc import MutableMapping
+from dataclasses import dataclass
 from datetime import date, datetime
+from typing import Literal
 
 import pandas as pd
 import streamlit as st
@@ -56,6 +59,86 @@ CLE_CONTEXTE = "contexte"
 CLE_PIECE_CORRIGEE = "piece_corrigee"
 CLE_PROPOSITION = "proposition_correction"
 CLE_CORRECTIONS = "corrections_ia"
+
+# Garde-fous d'UI des champs bornés : une seule source pour ``min_value=`` et
+# pour la détection des valeurs initiales hors bornes (issue #58).
+EPAISSEUR_MIN_MM = 0.1
+LARGEUR_MIN_MM = 1.0
+RAYON_MIN_MM = 0.1
+
+# Clés purgées au retour au dépôt : état de la validation en cours + widgets à
+# clé (sinon les éditions du data_editor du plan précédent sont rejouées sur le
+# plan suivant). CLE_CONTEXTE (client, quantités) est conservé.
+CLES_VALIDATION = (
+    CLE_RESULTAT,
+    CLE_PIECE_CORRIGEE,
+    CLE_PROPOSITION,
+    CLE_CORRECTIONS,
+    "texte_en_cours",
+    "texte_correction",
+    "editeur_profil",
+    "editeur_trous",
+)
+
+
+@dataclass(frozen=True)
+class ValeurInitiale:
+    """Pré-saisie d'un champ borné et son origine, affichée sous le champ."""
+
+    valeur: float | None  # injectée dans st.number_input(value=...) — None = vide
+    origine: Literal["plan", "defaut", "absente", "hors_bornes"]
+    explication: str  # toujours non vide
+
+
+def _nombre_fr(valeur: float) -> str:
+    """0.06 → « 0,06 » (format ``:g``, virgule décimale)."""
+    return f"{valeur:g}".replace(".", ",")
+
+
+def valeur_initiale(
+    libelle: str,
+    lue: float | None,
+    minimum: float,
+    defaut: tuple[float, str] | None = None,
+    unite: str = "mm",
+) -> ValeurInitiale:
+    """Valeur à pré-saisir dans un champ borné, avec l'origine de la valeur.
+
+    - lue >= minimum → origine ``plan`` ;
+    - absente (None) avec ``defaut`` = (valeur, origine lisible) >= minimum →
+      origine ``defaut``, « à confirmer » ;
+    - absente sans défaut → champ vide, origine ``absente`` (bloquant) ;
+    - lue (ou défaut) < minimum, <= 0 ou NaN → champ vide, origine
+      ``hors_bornes`` (bloquant). Jamais remplacée par le minimum en silence,
+      et une lecture aberrante ne retombe pas sur le défaut.
+    """
+    minimum_txt = f"minimum {_nombre_fr(minimum)} {unite}"
+    if lue is None and defaut is None:
+        return ValeurInitiale(None, "absente", f"{libelle} : non lu sur le plan, à saisir.")
+    if lue is None:
+        valeur, source = defaut
+        desc = f"défaut atelier {_nombre_fr(valeur)} {unite} ({source})"
+        if not valeur >= minimum:  # NaN compris
+            return ValeurInitiale(
+                None,
+                "hors_bornes",
+                f"{libelle} : absent du plan, {desc} hors bornes ({minimum_txt}), à saisir.",
+            )
+        return ValeurInitiale(valeur, "defaut", f"{libelle} : absent du plan, {desc}, à confirmer.")
+    if not lue >= minimum:  # NaN compris
+        return ValeurInitiale(
+            None,
+            "hors_bornes",
+            f"{libelle} : valeur lue hors bornes : {_nombre_fr(lue)} {unite} "
+            f"({minimum_txt}), à saisir.",
+        )
+    return ValeurInitiale(lue, "plan", f"{libelle} : lu sur le plan.")
+
+
+def revenir_au_depot(etat: MutableMapping[str, object]) -> None:
+    """Retire de ``etat`` (le session_state) les clés de CLES_VALIDATION."""
+    for cle in CLES_VALIDATION:
+        etat.pop(cle, None)
 
 
 def _journaliser_correction(texte: str, proposition: PropositionCorrection, issue: str) -> None:
@@ -462,17 +545,65 @@ def _choix_matieres(session) -> dict[str, str]:
     }
 
 
+def _lue(valeur: float | None) -> float | None:
+    """Valeur lue sur le plan, NaN conservé (signalé hors bornes, pas absent)."""
+    return None if valeur is None else float(valeur)
+
+
+def _champ_borne(
+    libelle: str, initiale: ValeurInitiale, minimum: float, step: float, **options
+) -> float | None:
+    """``st.number_input`` borné + origine de sa valeur affichée dessous."""
+    saisie = st.number_input(
+        libelle, min_value=minimum, value=initiale.valeur, step=step, **options
+    )
+    bloquant = saisie is None and initiale.origine in ("absente", "hors_bornes")
+    st.caption(("⛔ " if bloquant else "") + initiale.explication)
+    return saisie
+
+
 def _editer_piece(
     piece: PieceExtraite, choix_matieres: dict[str, str]
 ) -> tuple[PieceExtraite | None, str, list[str]]:
     """Formulaire borné V1 : matière, épaisseur, largeur, profil de pliage, trous.
 
     Retourne la pièce reconstruite, la matière choisie et les erreurs de
-    saisie. En cas d'erreur, la pièce est None : pas de recalcul sur un
-    formulaire incomplet (jamais de suppression silencieuse d'un élément).
-    Streamlit ré-exécute le script à chaque modification : le recalcul est
-    donc immédiat (§4).
+    saisie. Les valeurs par défaut à confirmer s'affichent en ⚠️ en tête du
+    formulaire, l'origine de chaque valeur sous son champ. En cas
+    d'erreur, la pièce est None : pas de recalcul sur un formulaire
+    incomplet (jamais de suppression silencieuse d'un élément), mais tout le
+    formulaire est rendu. Streamlit ré-exécute le script à chaque
+    modification : le recalcul est donc immédiat (§4).
     """
+    # Épaisseur et largeur : pas de défaut (une valeur arbitraire serait une
+    # valeur en dur) — absente ou hors bornes → champ vide + ⛔ (issue #58).
+    initiales = {
+        "Épaisseur (mm)": valeur_initiale(
+            "Épaisseur (mm)", _lue(piece.matiere.epaisseur.valeur), EPAISSEUR_MIN_MM
+        ),
+        "Largeur d'encombrement (mm)": valeur_initiale(
+            "Largeur d'encombrement (mm)",
+            _lue(piece.encombrement.largeur.valeur),
+            LARGEUR_MIN_MM,
+        ),
+    }
+    # Rayon général : cote du plan si extraite, sinon défaut atelier
+    # administrable (paramètre rayon_pliage_defaut_mm), à confirmer.
+    rayon_extrait = piece.profil_pliage.rayon_pliage_general if piece.profil_pliage else None
+    defaut_rayon = None
+    if rayon_extrait is None:
+        with get_session() as session:
+            defaut_rayon = (
+                float(get_parametre("rayon_pliage_defaut_mm", session)),
+                "paramètre rayon_pliage_defaut_mm",
+            )
+    initiales["Rayon de pliage général (mm)"] = valeur_initiale(
+        "Rayon de pliage général (mm)", _lue(rayon_extrait), RAYON_MIN_MM, defaut_rayon
+    )
+    for initiale in initiales.values():
+        if initiale.origine == "defaut":
+            st.warning(f"⚠️ {initiale.explication}")
+
     col1, col2, col3, col4 = st.columns(4)
     with col1:
         matiere_defaut = piece.matiere.designation.valeur
@@ -481,35 +612,22 @@ def _editer_piece(
         index = ids.index(matiere_defaut) if matiere_defaut in ids else 0
         matiere_id = choix_matieres[st.selectbox("Matière", libelles, index=index)]
     with col2:
-        epaisseur = st.number_input(
-            "Épaisseur (mm)",
-            min_value=0.1,
-            value=float(piece.matiere.epaisseur.valeur or 1.0),
-            step=0.5,
+        epaisseur = _champ_borne(
+            "Épaisseur (mm)", initiales["Épaisseur (mm)"], EPAISSEUR_MIN_MM, 0.5
         )
     with col3:
-        largeur = st.number_input(
+        largeur = _champ_borne(
             "Largeur d'encombrement (mm)",
-            min_value=1.0,
-            value=float(piece.encombrement.largeur.valeur or 50.0),
-            step=5.0,
+            initiales["Largeur d'encombrement (mm)"],
+            LARGEUR_MIN_MM,
+            5.0,
         )
     with col4:
-        # Rayon général : cote du plan si extraite, sinon défaut atelier
-        # administrable (paramètre rayon_pliage_defaut_mm) — jamais de blocage.
-        rayon_extrait = (
-            piece.profil_pliage.rayon_pliage_general if piece.profil_pliage else None
-        )
-        if rayon_extrait is not None:
-            rayon_defaut = float(rayon_extrait)
-        else:
-            with get_session() as session:
-                rayon_defaut = float(get_parametre("rayon_pliage_defaut_mm", session))
-        rayon_general = st.number_input(
+        rayon_general = _champ_borne(
             "Rayon de pliage général (mm)",
-            min_value=0.1,
-            value=rayon_defaut,
-            step=0.5,
+            initiales["Rayon de pliage général (mm)"],
+            RAYON_MIN_MM,
+            0.5,
             help=(
                 "Utilisé pour tout pli sans cote de rayon. Pré-rempli depuis le plan, "
                 "sinon depuis le paramètre rayon_pliage_defaut_mm (administrable)."
@@ -573,7 +691,14 @@ def _editer_piece(
     elements: list[Aile | Pli] = []
     lignes_profil_editees = tableau_profil.to_dict("records")
     lignes_trous_editees = tableau_trous.to_dict("records")
-    erreurs = _valider_lignes(lignes_profil_editees, lignes_trous_editees)
+    erreurs = [
+        initiales[libelle].explication
+        if initiales[libelle].origine in ("absente", "hors_bornes")
+        else f"{libelle} : valeur à saisir."
+        for libelle, saisie in zip(initiales, (epaisseur, largeur, rayon_general), strict=True)
+        if saisie is None
+    ]
+    erreurs += _valider_lignes(lignes_profil_editees, lignes_trous_editees)
     if erreurs:
         return None, matiere_id, erreurs
 
@@ -613,13 +738,15 @@ def _editer_piece(
 def ecran_validation() -> None:
     """Écran 2 : validation humaine — anomalies en tête, 3D, recalcul immédiat."""
     st.title("Validation de la pièce")
+    # Bouton unique, rendu en premier : reste accessible quoi qu'il arrive
+    # plus bas (extraction échouée, saisie bloquée, erreur imprévue).
+    if st.button("Retour au dépôt"):
+        revenir_au_depot(st.session_state)
+        st.rerun()
     resultat_initial: ResultatDevis = st.session_state[CLE_RESULTAT]
     piece_extraite = resultat_initial.piece
     if piece_extraite is None:
         st.error(resultat_initial.erreur or "Aucune pièce extraite.")
-        if st.button("Retour au dépôt"):
-            st.session_state.pop(CLE_RESULTAT, None)
-            st.rerun()
         return
     # La pièce corrigée par l'assistant (acceptations précédentes) fait foi.
     piece: PieceExtraite = st.session_state.get(CLE_PIECE_CORRIGEE) or piece_extraite
