@@ -46,6 +46,7 @@ from generateur_devis.schema.piece import (
 from generateur_devis.ui.formatage import formater_valeur
 from generateur_devis.ui.pipeline import ResultatDevis, orchestrer_devis, rechiffrer
 from generateur_devis.ui.rendu3d import maillage_vers_figure
+from generateur_devis.ui.ventilation import lignes_trace, ventilation_couts
 
 TYPES_PLAN = ["pdf", "png", "jpg", "jpeg", "webp"]
 CLE_RESULTAT = "resultat_devis"
@@ -602,6 +603,37 @@ def ecran_validation() -> None:
                         ],
                     }
                 )
+
+        # --- Origine des coûts --------------------------------------------------
+        if resultat.chiffrage is not None:
+            with st.expander("D'où viennent les coûts ?"):
+                st.caption(
+                    "Coût(Q) = Σ coûts variables + Σ coûts fixes ÷ Q "
+                    "(finition : max(variable, minimum de lot ÷ Q)) ; "
+                    "prix = coût ÷ (1 − marge)."
+                )
+                st.dataframe(
+                    [
+                        {
+                            "Bloc": ligne["bloc"],
+                            "Variable (€/pièce)": float(
+                                formater_valeur(
+                                    "cout_unitaire_eur", ligne["variable_eur_piece"]
+                                )
+                            ),
+                            "Fixe (€/lot)": float(
+                                formater_valeur(
+                                    "cout_unitaire_eur", ligne["fixe_eur_lot"]
+                                )
+                            ),
+                            "Détail": ligne["detail"],
+                        }
+                        for ligne in ventilation_couts(resultat.chiffrage)
+                    ],
+                    hide_index=True,
+                )
+                st.caption("Trace complète du calcul (figée au chiffrage) :")
+                st.dataframe(lignes_trace(resultat.chiffrage), hide_index=True)
 
         # --- Option traitement de surface --------------------------------------
         traitement = st.selectbox("Option traitement de surface", ["(aucune)"] + traitements)
