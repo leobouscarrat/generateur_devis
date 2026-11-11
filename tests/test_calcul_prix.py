@@ -24,6 +24,7 @@ from generateur_devis.calcul_prix import (
     calculer_bloc_soudure,
     calculer_blocs_1_3,
     calculer_blocs_4_6,
+    chiffrer,
 )
 from generateur_devis.data.acces import get_matiere, get_parametre, get_poste
 from generateur_devis.data.seed import seed
@@ -331,3 +332,101 @@ def test_calculer_blocs_4_6_piece_003(session, flan_003):
     assert blocs.composants.cout_variable_eur + (
         blocs.composants.cout_fixe_eur_par_lot / QUANTITE
     ) == pytest.approx(0.95, abs=0.02)
+
+
+# ---------------------------------------------------------------------------
+# Agrégation (issue #15) : chiffrer()
+# ---------------------------------------------------------------------------
+
+
+def _palier(chiffrage, q):
+    return next(p for p in chiffrage.paliers if p.quantite == q)
+
+
+def test_chiffrer_piece_003_q100(session):
+    """§8.3 : coût ≈ 2,20 € et prix ≈ 2,93 € à Q=100, recalculés depuis les
+    tables seedées (blocs 0,10 / 0,60 / 0,54 / 0 / 0 / 0,95)."""
+    result = chiffrer(piece_003(), MATIERE, session, composants=[("ES-M6-A", 2)])
+    p = _palier(result, 100)
+    assert p.cout_unitaire_eur == pytest.approx(2.20, abs=0.03)
+    assert p.prix_unitaire_eur == pytest.approx(2.93, abs=0.05)
+
+
+def test_chiffrer_piece_003_paliers(session):
+    """§8.4 : coûts unitaires 63,25 / 7,75 / 1,65 € aux paliers 1 / 10 / 1000."""
+    result = chiffrer(piece_003(), MATIERE, session, composants=[("ES-M6-A", 2)])
+    assert _palier(result, 1).cout_unitaire_eur == pytest.approx(63.25, abs=0.3)
+    assert _palier(result, 10).cout_unitaire_eur == pytest.approx(7.75, abs=0.1)
+    assert _palier(result, 1000).cout_unitaire_eur == pytest.approx(1.65, abs=0.05)
+    # §8.4 : prix unitaires correspondants (marge 25 %)
+    assert _palier(result, 1).prix_unitaire_eur == pytest.approx(84.33, abs=0.5)
+    assert _palier(result, 1000).prix_unitaire_eur == pytest.approx(2.19, abs=0.05)
+
+
+def test_chiffrer_paliers_defaut_depuis_base(session):
+    """Sans argument, les paliers viennent du paramètre paliers_quantite."""
+    result = chiffrer(piece_003(), MATIERE, session, composants=[("ES-M6-A", 2)])
+    assert [p.quantite for p in result.paliers] == [1, 10, 100, 1000]
+
+
+def test_chiffrer_paliers_explicites(session):
+    result = chiffrer(piece_003(), MATIERE, session, quantites=[25], composants=[])
+    assert [p.quantite for p in result.paliers] == [25]
+
+
+def test_chiffrer_quantite_invalide(session):
+    with pytest.raises(ErreurChiffrage, match="Paliers de quantité invalides"):
+        chiffrer(piece_003(), MATIERE, session, quantites=[100, 0])
+
+
+def test_chiffrer_marge_client(session):
+    """CLI001 a une marge spécifique de 18 % : prix = coût ÷ 0,82."""
+    result = chiffrer(piece_003(), MATIERE, session, composants=[("ES-M6-A", 2)], client_id="CLI001")
+    p = _palier(result, 100)
+    assert p.prix_unitaire_eur == pytest.approx(p.cout_unitaire_eur / 0.82, rel=1e-9)
+    assert p.prix_unitaire_eur == pytest.approx(2.20 / 0.82, abs=0.05)
+
+
+def test_chiffrer_client_inconnu(session):
+    with pytest.raises(ErreurChiffrage, match="Client inconnu"):
+        chiffrer(piece_003(), MATIERE, session, client_id="INCONNU")
+
+
+def test_chiffrer_matiere_inconnue(session):
+    with pytest.raises(ErreurChiffrage, match="Matière inconnue"):
+        chiffrer(piece_003(), "INCONNU", session)
+
+
+def test_chiffrer_faisabilite_bloquante(session):
+    """Épaisseur non disponible pour la matière → blocage → pas de chiffrage."""
+    piece = piece_003()
+    piece.matiere.epaisseur = Champ[float](valeur=7.0)  # non dispo pour S235JR
+    with pytest.raises(ErreurChiffrage, match="faisabilité bloquante"):
+        chiffrer(piece, MATIERE, session)
+
+
+def test_chiffrer_trace_complete(session):
+    """Chaque bloc a sa ligne de trace (formule, valeurs, table, date du prix)."""
+    result = chiffrer(piece_003(), MATIERE, session, composants=[("ES-M6-A", 2)])
+    blocs = {ligne.bloc for ligne in result.trace}
+    assert blocs == {"matiere", "decoupe", "pliage", "soudure", "composants", "marge"}
+    for ligne in result.trace:
+        assert ligne.formule
+        assert ligne.table_origine
+    matiere_ligne = next(ligne for ligne in result.trace if ligne.bloc == "matiere")
+    assert matiere_ligne.table_origine == "matieres"
+    assert matiere_ligne.date_prix == get_matiere(MATIERE, session).date_maj
+    marge_ligne = next(ligne for ligne in result.trace if ligne.bloc == "marge")
+    assert marge_ligne.valeurs["marge"] == pytest.approx(0.25)
+    # Figeable : le résultat est sérialisable tel quel
+    assert result.model_dump_json()
+
+
+def test_chiffrer_piece_avec_traitement(session):
+    """Une pièce avec traitement spécifié inclut la finition (max avec min de lot)."""
+    piece = piece_003()
+    piece.traitement.type = Champ[TypeTraitement](valeur="thermolaquage")
+    result = chiffrer(piece, MATIERE, session, composants=[("ES-M6-A", 2)])
+    p = _palier(result, 100)
+    assert p.cout_unitaire_eur == pytest.approx(2.20 + 0.80, abs=0.06)
+    assert any(ligne.bloc == "finition" for ligne in result.trace)
