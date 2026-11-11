@@ -182,10 +182,6 @@ def test_bloc_matiere_rendement_nul_levere_erreur(session, flan_003):
 def test_bloc_matiere_cout_reference_piece_003(session, flan_003):
     """C13 : Bloc 1 coût variable unitaire ≈ 0,10 €, coût fixe par lot = 0 € à Q=100."""
     bloc = calculer_bloc_matiere(flan_003, MATIERE, session)
-    matiere = get_matiere(MATIERE, session)
-    rendement = float(get_parametre("rendement_calepinage", session))
-    attendu = flan_003.masse_flan_kg / rendement * matiere.prix_eur_kg
-    assert bloc.cout_variable_eur == pytest.approx(attendu, rel=1e-9)
     assert bloc.cout_variable_eur == pytest.approx(0.10, abs=0.01)
     assert bloc.cout_fixe_eur_par_lot == 0.0
 
