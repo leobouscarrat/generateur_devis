@@ -451,6 +451,7 @@ def get_parametre(cle: str, session: Session) -> str | float | int:
     # Conversion selon la clé
     _conversion: dict[str, Any] = {
         "marge_defaut": float,
+        "seuil_confiance_champs": float,
         "rendement_calepinage": float,
         "facteur_k": float,
         "regle_diam_trou_min_e": float,

@@ -191,6 +191,7 @@ _TRAITEMENTS: list[Traitement] = [
 
 _PARAMETRES_DEFAUT: dict[str, Any] = {
     "marge_defaut": "0.25",
+    "seuil_confiance_champs": "0.7",
     "rendement_calepinage": "0.80",
     "facteur_k": "0.40",
     "frais_structure_pct": "0",
