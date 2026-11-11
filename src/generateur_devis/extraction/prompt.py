@@ -92,9 +92,13 @@ Règles :
      "quantite": ...} avec type parmi ecrou_a_sertir, goujon_a_sertir, entretoise_a_sertir,
      insert, rivet, autre.
 3. Chaque modification porte une justification courte (ce que tu as compris du texte).
-4. Si le texte demande une suppression ou une modification hors de ces cas, ne la mets pas \
+4. Un remplacement n'est possible que si la **section existe déjà** dans la fiche \
+courante : si « profil_pliage » vaut null, ne propose PAS \
+profil_pliage.rayon_pliage_general — signale en "remarque" que la section doit \
+être créée (hors de ce diff). Même règle pour matiere et encombrement.
+5. Si le texte demande une suppression ou une modification hors de ces cas, ne la mets pas \
 dans le diff : signale-la dans une clé "remarque" à la racine.
-5. Si le texte est ambigu, propose ce que tu comprends et explique-le dans la justification.
+6. Si le texte est ambigu, propose ce que tu comprends et explique-le dans la justification.
 """
 
 
