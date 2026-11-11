@@ -321,7 +321,7 @@ def charger_ecado(partie: str, n_dev: int = 5, n_test: int = 40) -> Jeu:
     return Jeu("ecado", CHAMPS_ECADO, echantillons)
 
 
-# --- plans privés annotés à la main (ex. piece_003) ---------------------------------------
+# --- plans privés annotés à la main (ex. piece_support) ---------------------------------------
 
 DOSSIER_PRIVE = RACINE / "data" / "prive"
 

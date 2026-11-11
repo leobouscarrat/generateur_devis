@@ -2,7 +2,7 @@
 
 Invariant central : la longueur de la ligne médiane du profil est égale à la
 longueur développée du flan calculée par ``geometrie`` (mêmes données).
-Références chiffrées : docs/logique_metier.md §8 (piece_003, « SUPPORT »).
+Références chiffrées : docs/logique_metier.md §8 (piece_support, « SUPPORT »).
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ DENSITE_ACIER = 7.85
 FACTEUR_K = 0.40
 
 
-def piece_003() -> PieceExtraite:
+def piece_support() -> PieceExtraite:
     """Le « SUPPORT » du §8 : Z, 2 plis 90°, R 2 mm, cotes extérieures."""
     return PieceExtraite(
         matiere=Matiere(epaisseur=Champ[float](valeur=2.0)),
@@ -62,12 +62,12 @@ def _piece(elements: list, cotation: str = "exterieure", rayon: float | None = 2
 # --- Profil 2D ----------------------------------------------------------------
 
 
-def test_profil_piece_003_forme_z():
+def test_profil_piece_support_forme_z():
     """Z : horizontal → vertical (pli haut) → horizontal opposé (pli bas).
 
     §8 : BD = 3,60 mm → segments 42−1,8 / 22−3,6 / 18−1,8 = 40,2 / 18,4 / 16,2.
     """
-    points = construire_profil_2d(piece_003(), FACTEUR_K)
+    points = construire_profil_2d(piece_support(), FACTEUR_K)
     assert len(points) == 4
     assert points[0] == pytest.approx((0.0, 0.0))
     assert points[1] == pytest.approx((40.2, 0.0), abs=0.01)
@@ -75,9 +75,9 @@ def test_profil_piece_003_forme_z():
     assert points[3] == pytest.approx((56.4, 18.4), abs=0.01)
 
 
-def test_invariant_longueur_developpee_piece_003():
+def test_invariant_longueur_developpee_piece_support():
     """Longueur de la ligne médiane = développé du flan (74,8 mm, §8)."""
-    piece = piece_003()
+    piece = piece_support()
     points = construire_profil_2d(piece, FACTEUR_K)
     flan = construire_flan(piece, DENSITE_ACIER, FACTEUR_K)
     assert longueur_ligne(points) == pytest.approx(flan.longueur_developpee_mm, abs=0.01)
@@ -128,9 +128,9 @@ def test_profil_qui_se_croise_erreur():
 # --- Maillage extrudé ----------------------------------------------------------
 
 
-def test_modele_3d_piece_003():
+def test_modele_3d_piece_support():
     """Maillage : 2 rangées de sommets (y = 0 et y = 60), 3 faces (3 segments)."""
-    maillage = construire_modele_3d(piece_003(), FACTEUR_K)
+    maillage = construire_modele_3d(piece_support(), FACTEUR_K)
     assert len(maillage.sommets) == 8
     assert len(maillage.faces) == 3
     assert maillage.epaisseur_mm == 2.0
@@ -173,7 +173,7 @@ def test_rayon_non_cote_erreur():
 
 
 def test_largeur_absente_erreur():
-    piece = piece_003()
+    piece = piece_support()
     piece.encombrement.largeur = Champ[float](valeur=None)
     with pytest.raises(ErreurGeometrie, match="Largeur d'encombrement absente"):
         construire_modele_3d(piece, FACTEUR_K)

@@ -1,6 +1,6 @@
 """Tests du module géométrie (issue #7).
 
-Les valeurs de référence viennent de docs/logique_metier.md §8 (piece_003,
+Les valeurs de référence viennent de docs/logique_metier.md §8 (piece_support,
 « SUPPORT ») : elles sont recalculées indépendamment du module — les tests
 appellent les fonctions de ``geometrie`` et comparent aux chiffres du document.
 """
@@ -34,13 +34,13 @@ from generateur_devis.schema.piece import (
     Trou,
 )
 
-# --- Référence piece_003 (§8) ------------------------------------------------
+# --- Référence piece_support (§8) ------------------------------------------------
 
 DENSITE_ACIER = 7.85  # kg/dm³ (seedée en base, passée ici en paramètre)
 FACTEUR_K = 0.40  # paramètre global « facteur_k » de la base
 
 
-def piece_003() -> PieceExtraite:
+def piece_support() -> PieceExtraite:
     """Le « SUPPORT » du §8 : Z, 2 plis 90°, R 2 mm, cotes extérieures."""
     return PieceExtraite(
         matiere=Matiere(epaisseur=Champ[float](valeur=2.0)),
@@ -72,25 +72,25 @@ def piece_003() -> PieceExtraite:
 # --- Formule du développé ----------------------------------------------------
 
 
-def test_ba_piece_003():
+def test_ba_piece_support():
     """§8 : BA = π/2 × (2 + 0,4 × 2) = 4,40 mm."""
     assert calculer_ba(90.0, 2.0, 2.0, FACTEUR_K) == pytest.approx(4.40, abs=0.01)
 
 
-def test_bd_piece_003():
+def test_bd_piece_support():
     """§8 : BD = 2 × (2 + 2) − 4,40 = 3,60 mm."""
     assert calculer_bd(90.0, 2.0, 2.0, FACTEUR_K) == pytest.approx(3.60, abs=0.01)
 
 
-def test_developpe_piece_003():
+def test_developpe_piece_support():
     """§8 : développé = 42 + 22 + 18 − 2 × 3,60 = 74,8 ≈ 75 mm."""
-    flan = construire_flan(piece_003(), DENSITE_ACIER, FACTEUR_K)
+    flan = construire_flan(piece_support(), DENSITE_ACIER, FACTEUR_K)
     assert flan.longueur_developpee_mm == pytest.approx(74.8, abs=0.1)
 
 
 def test_developpe_cotation_interieure():
     """Cotes intérieures : Σ ailes + Σ BA (même pièce, cotation intérieure)."""
-    piece = piece_003()
+    piece = piece_support()
     assert piece.profil_pliage is not None
     piece.profil_pliage.cotation = "interieure"
     # 82 + 2 × 4,40 = 90,8 mm
@@ -109,19 +109,19 @@ def test_piece_plate():
     assert flan.longueur_developpee_mm == pytest.approx(75.0)
 
 
-# --- Flan de piece_003 : surfaces, masses, coupe, amorçages ------------------
+# --- Flan de piece_support : surfaces, masses, coupe, amorçages ------------------
 
 
-def test_masse_flan_piece_003():
+def test_masse_flan_piece_support():
     """§8 : masse flan = 4 500 × 2 × 7,85·10⁻⁶ ≈ 0,071 kg (rectangle englobant)."""
-    flan = construire_flan(piece_003(), DENSITE_ACIER, FACTEUR_K)
+    flan = construire_flan(piece_support(), DENSITE_ACIER, FACTEUR_K)
     assert flan.surface_englobant_mm2 == pytest.approx(74.8 * 60, rel=0.01)
     assert flan.masse_flan_kg == pytest.approx(0.071, abs=0.002)
 
 
-def test_surface_nette_piece_003():
+def test_surface_nette_piece_support():
     """Surface nette = englobant − trous − chanfreins (recalcul document)."""
-    flan = construire_flan(piece_003(), DENSITE_ACIER, FACTEUR_K)
+    flan = construire_flan(piece_support(), DENSITE_ACIER, FACTEUR_K)
     attendu = (
         74.8 * 60
         - (2 * math.pi * (8.75 / 2) ** 2 + 2 * math.pi * (7.5 / 2) ** 2)
@@ -131,20 +131,20 @@ def test_surface_nette_piece_003():
     assert flan.masse_nette_kg == pytest.approx(attendu * 2 * DENSITE_ACIER * 1e-6, rel=0.01)
 
 
-def test_longueur_coupe_piece_003():
+def test_longueur_coupe_piece_support():
     """§8 : contour ≈ 241 mm (chanfreins déduits) + trous ≈ 102 mm → ≈ 343 mm."""
-    flan = construire_flan(piece_003(), DENSITE_ACIER, FACTEUR_K)
+    flan = construire_flan(piece_support(), DENSITE_ACIER, FACTEUR_K)
     assert flan.longueur_coupe_mm == pytest.approx(343.0, abs=3.0)
 
 
-def test_nombre_amorcages_piece_003():
+def test_nombre_amorcages_piece_support():
     """§8 : 5 amorçages = 1 contour + 4 trous (les quantités comptent)."""
-    flan = construire_flan(piece_003(), DENSITE_ACIER, FACTEUR_K)
+    flan = construire_flan(piece_support(), DENSITE_ACIER, FACTEUR_K)
     assert flan.nombre_amorcages == 5
 
 
 def test_polygone_est_rectangle_englobant():
-    flan = construire_flan(piece_003(), DENSITE_ACIER, FACTEUR_K)
+    flan = construire_flan(piece_support(), DENSITE_ACIER, FACTEUR_K)
     assert aire_polygone_shoelace(flan.polygone_englobant) == pytest.approx(
         flan.surface_englobant_mm2
     )
@@ -196,7 +196,7 @@ def test_profil_absent_erreur():
 
 
 def test_cotation_inconnue_erreur():
-    piece = piece_003()
+    piece = piece_support()
     assert piece.profil_pliage is not None
     piece.profil_pliage.cotation = "inconnue"
     with pytest.raises(ErreurGeometrie, match="Cotation du profil inconnue"):
@@ -204,7 +204,7 @@ def test_cotation_inconnue_erreur():
 
 
 def test_rayon_non_cote_erreur():
-    piece = piece_003()
+    piece = piece_support()
     assert piece.profil_pliage is not None
     piece.profil_pliage.rayon_pliage_general = None
     with pytest.raises(ErreurGeometrie, match="Rayon de pliage non coté"):
@@ -212,14 +212,14 @@ def test_rayon_non_cote_erreur():
 
 
 def test_epaisseur_absente_erreur():
-    piece = piece_003()
+    piece = piece_support()
     piece.matiere.epaisseur = Champ[float](valeur=None)
     with pytest.raises(ErreurGeometrie, match="Épaisseur de tôle absente"):
         construire_flan(piece, DENSITE_ACIER, FACTEUR_K)
 
 
 def test_largeur_absente_erreur():
-    piece = piece_003()
+    piece = piece_support()
     piece.encombrement.largeur = Champ[float](valeur=None)
     with pytest.raises(ErreurGeometrie, match="Largeur d'encombrement absente"):
         construire_flan(piece, DENSITE_ACIER, FACTEUR_K)
@@ -248,4 +248,4 @@ def test_cotes_contradictoires_erreur():
 
 def test_densite_invalide_erreur():
     with pytest.raises(ErreurGeometrie, match="Densité invalide"):
-        construire_flan(piece_003(), 0.0, FACTEUR_K)
+        construire_flan(piece_support(), 0.0, FACTEUR_K)

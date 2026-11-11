@@ -3,7 +3,7 @@
 Base SQLite en mémoire seedée (même approche que ``test_faisabilite.py``).
 Les valeurs attendues sont recalculées à la main depuis les données seedées
 (lues via ``acces``) et confrontées aux montants de référence du
-docs/logique_metier.md §8.3 (piece_003, montants unitaires à Q=100) :
+docs/logique_metier.md §8.3 (piece_support, montants unitaires à Q=100) :
 bloc 1 = 0,10 €, bloc 2 = 0,30 € variable + 30 € de réglage/lot,
 bloc 3 = 0,31 € variable + 23,3 € de réglage/lot.
 """
@@ -51,7 +51,7 @@ DENSITE_ACIER = 7.85
 FACTEUR_K = 0.40  # paramètre « facteur_k » de la base
 
 
-def piece_003() -> PieceExtraite:
+def piece_support() -> PieceExtraite:
     """Le « SUPPORT » du §8 : Z, 2 plis 90°, R 2 mm, cotes extérieures."""
     return PieceExtraite(
         matiere=Matiere(epaisseur=Champ[float](valeur=2.0)),
@@ -94,13 +94,13 @@ def session():
 @pytest.fixture
 def flan_003(session):
     matiere = get_matiere(MATIERE, session)
-    return construire_flan(piece_003(), matiere.densite_kg_dm3, FACTEUR_K)
+    return construire_flan(piece_support(), matiere.densite_kg_dm3, FACTEUR_K)
 
 
 # --- Bloc 1 — Matière ---------------------------------------------------------
 
 
-def test_bloc_matiere_piece_003(session, flan_003):
+def test_bloc_matiere_piece_support(session, flan_003):
     """§8.3 : 0,071 kg ÷ 0,80 × 1,10 €/kg ≈ 0,10 €/pièce."""
     bloc = calculer_bloc_matiere(flan_003, MATIERE, session)
     assert bloc.cout_variable_eur == pytest.approx(0.10, abs=0.01)
@@ -123,7 +123,7 @@ def test_bloc_matiere_rendement_nul(session, flan_003):
 # --- Bloc 2 — Découpe ----------------------------------------------------------
 
 
-def test_bloc_decoupe_piece_003(session, flan_003):
+def test_bloc_decoupe_piece_support(session, flan_003):
     """§8.3 : (0,343 m ÷ 5 m/min + 5 × 1 s) ≈ 9,1 s × 120 €/h ≈ 0,30 €/pièce
     + réglage 15 min × 120 €/h = 30 € de fixe par lot."""
     bloc = calculer_bloc_decoupe(flan_003, "acier", session)
@@ -154,10 +154,10 @@ def test_bloc_decoupe_poste_inconnu(session, flan_003):
 # --- Bloc 3 — Pliage -----------------------------------------------------------
 
 
-def test_bloc_pliage_piece_003(session, flan_003):
+def test_bloc_pliage_piece_support(session, flan_003):
     """§8.3 : 2 plis × 8 s = 16 s × 70 €/h ≈ 0,31 €/pièce
     + réglage 20 min × 70 €/h ≈ 23,3 € de fixe par lot."""
-    bloc = calculer_bloc_pliage(piece_003(), flan_003, session)
+    bloc = calculer_bloc_pliage(piece_support(), flan_003, session)
     assert bloc.nb_plis == 2
     assert bloc.temps_par_pli_s == pytest.approx(8.0)  # tranche « petite » seedée
     assert bloc.temps_cycle_s == pytest.approx(16.0)
@@ -204,8 +204,8 @@ def test_bloc_pliage_grande_piece(session):
 # --- Orchestrateur des trois blocs --------------------------------------------
 
 
-def test_calculer_blocs_1_3_piece_003(session, flan_003):
-    blocs = calculer_blocs_1_3(piece_003(), flan_003, MATIERE, session)
+def test_calculer_blocs_1_3_piece_support(session, flan_003):
+    blocs = calculer_blocs_1_3(piece_support(), flan_003, MATIERE, session)
     assert blocs.matiere.cout_variable_eur == pytest.approx(0.10, abs=0.01)
     assert blocs.decoupe.cout_variable_eur == pytest.approx(0.30, abs=0.01)
     assert blocs.pliage.cout_variable_eur == pytest.approx(0.31, abs=0.01)
@@ -213,7 +213,7 @@ def test_calculer_blocs_1_3_piece_003(session, flan_003):
 
 def test_calculer_blocs_1_3_matiere_inconnue(session, flan_003):
     with pytest.raises(ErreurChiffrage, match="Matière inconnue"):
-        calculer_blocs_1_3(piece_003(), flan_003, "INCONNU", session)
+        calculer_blocs_1_3(piece_support(), flan_003, "INCONNU", session)
 
 
 def test_parametres_postes_depuis_la_base(session):
@@ -229,14 +229,14 @@ def test_parametres_postes_depuis_la_base(session):
 
 def test_bloc_soudure_piece_sans_soudure():
     """Pièce unique découpée-pliée : bloc 4 à zéro."""
-    bloc = calculer_bloc_soudure(piece_003())
+    bloc = calculer_bloc_soudure(piece_support())
     assert bloc.cout_variable_eur == 0.0
     assert bloc.cout_fixe_eur_par_lot == 0.0
 
 
 def test_bloc_soudure_piece_soudee_erreur():
     """Une pièce soudée est refusée explicitement (hors périmètre V1)."""
-    piece = piece_003()
+    piece = piece_support()
     piece.soudures.append(Soudure(procede="mig_mag", longueur=30.0))
     with pytest.raises(ErreurChiffrage, match="soudé hors périmètre V1"):
         calculer_bloc_soudure(piece)
@@ -244,13 +244,13 @@ def test_bloc_soudure_piece_soudee_erreur():
 
 def test_bloc_finition_non_specifiee_absente(session, flan_003):
     """Traitement non spécifié sur le plan → exclu du chiffrage de base."""
-    assert calculer_bloc_finition(piece_003(), flan_003, session) is None
+    assert calculer_bloc_finition(piece_support(), flan_003, session) is None
 
 
-def test_bloc_finition_option_peinture_piece_003(session, flan_003):
+def test_bloc_finition_option_peinture_piece_support(session, flan_003):
     """§8.3 : option peinture poudre ≈ 0,27 €/pièce, minimum de lot 80 €
     → contribution à Q=100 = max(0,27 ; 80 ÷ 100) = 0,80 €/pièce."""
-    bloc = calculer_bloc_finition(piece_003(), flan_003, session, traitement_id="PEINTURE_POUDRE")
+    bloc = calculer_bloc_finition(piece_support(), flan_003, session, traitement_id="PEINTURE_POUDRE")
     assert bloc is not None
     assert bloc.surface_traitee_m2 == pytest.approx(2 * flan_003.surface_nette_mm2 * 1e-6)
     assert bloc.cout_variable_eur == pytest.approx(0.27, abs=0.02)
@@ -262,7 +262,7 @@ def test_bloc_finition_option_peinture_piece_003(session, flan_003):
 
 def test_bloc_finition_type_du_plan_resolu(session, flan_003):
     """Un type de traitement extrait du plan est résolu via le référentiel."""
-    piece = piece_003()
+    piece = piece_support()
     piece.traitement.type = Champ[TypeTraitement](valeur="thermolaquage")
     bloc = calculer_bloc_finition(piece, flan_003, session)
     assert bloc is not None
@@ -272,19 +272,19 @@ def test_bloc_finition_type_du_plan_resolu(session, flan_003):
 def test_bloc_finition_tarif_kg_hors_perimetre(session, flan_003):
     """Un traitement tarifé au kg (galvanisation) est refusé explicitement."""
     with pytest.raises(ErreurChiffrage, match="tarifé au kg"):
-        calculer_bloc_finition(piece_003(), flan_003, session, traitement_id="GALVA_CHAUD")
+        calculer_bloc_finition(piece_support(), flan_003, session, traitement_id="GALVA_CHAUD")
 
 
 def test_bloc_finition_traitement_inconnu(session, flan_003):
     with pytest.raises(ErreurChiffrage, match="Traitement inconnu"):
-        calculer_bloc_finition(piece_003(), flan_003, session, traitement_id="INCONNU")
+        calculer_bloc_finition(piece_support(), flan_003, session, traitement_id="INCONNU")
 
 
-def test_bloc_composants_piece_003(session):
+def test_bloc_composants_piece_support(session):
     """§8.3 : écrous 2 × 0,20 = 0,40 € ; sertissage 24 s + ébavurage 10 s
     = 34 s × 50 €/h ≈ 0,47 € ; réglage sertisseuse 10 min × 50 €/h ≈ 8,3 €
     de fixe/lot → bloc 6 ≈ 0,95 €/pièce à Q=100."""
-    bloc = calculer_bloc_composants(piece_003(), [("ES-M6-A", 2)], session)
+    bloc = calculer_bloc_composants(piece_support(), [("ES-M6-A", 2)], session)
     assert bloc.cout_composants_eur == pytest.approx(0.40)
     assert bloc.temps_operations_s == pytest.approx(34.0)  # 2 × 12 + 10
     assert bloc.cout_operations_eur == pytest.approx(0.47, abs=0.01)
@@ -298,7 +298,7 @@ def test_bloc_composants_piece_003(session):
 
 def test_bloc_composants_piece_sans_composant(session):
     """Pièce sans composant ni trou fileté : bloc 6 à zéro, sans ébavurage."""
-    bloc = calculer_bloc_composants(piece_003(), [], session)
+    bloc = calculer_bloc_composants(piece_support(), [], session)
     assert bloc.cout_variable_eur == 0.0
     assert bloc.cout_fixe_eur_par_lot == 0.0
     assert bloc.postes_utilises == []
@@ -306,7 +306,7 @@ def test_bloc_composants_piece_sans_composant(session):
 
 def test_bloc_composants_taraudage(session):
     """Un trou fileté ajoute un taraudage (et l'ébavurage)."""
-    piece = piece_003()
+    piece = piece_support()
     piece.contours.trous[0].filetage = "M8"
     bloc = calculer_bloc_composants(piece, [], session)
     # taraudage × 2 (quantité du trou) + ébavurage × 1, poste MANUEL (réglage 0)
@@ -317,12 +317,12 @@ def test_bloc_composants_taraudage(session):
 
 def test_bloc_composants_reference_inconnue(session):
     with pytest.raises(ErreurChiffrage, match="Composant inconnu"):
-        calculer_bloc_composants(piece_003(), [("INCONNU", 1)], session)
+        calculer_bloc_composants(piece_support(), [("INCONNU", 1)], session)
 
 
-def test_calculer_blocs_4_6_piece_003(session, flan_003):
+def test_calculer_blocs_4_6_piece_support(session, flan_003):
     """Pièce de référence : soudure 0, finition absente, bloc 6 ≈ 0,95 € à Q=100."""
-    blocs = calculer_blocs_4_6(piece_003(), flan_003, session, composants=[("ES-M6-A", 2)])
+    blocs = calculer_blocs_4_6(piece_support(), flan_003, session, composants=[("ES-M6-A", 2)])
     assert blocs.soudure.cout_variable_eur == 0.0
     assert blocs.finition is None
     assert blocs.composants.cout_variable_eur + (
@@ -339,18 +339,18 @@ def _palier(chiffrage, q):
     return next(p for p in chiffrage.paliers if p.quantite == q)
 
 
-def test_chiffrer_piece_003_q100(session):
+def test_chiffrer_piece_support_q100(session):
     """§8.3 : coût ≈ 2,20 € et prix ≈ 2,93 € à Q=100, recalculés depuis les
     tables seedées (blocs 0,10 / 0,60 / 0,54 / 0 / 0 / 0,95)."""
-    result = chiffrer(piece_003(), MATIERE, session, composants=[("ES-M6-A", 2)])
+    result = chiffrer(piece_support(), MATIERE, session, composants=[("ES-M6-A", 2)])
     p = _palier(result, 100)
     assert p.cout_unitaire_eur == pytest.approx(2.20, abs=0.03)
     assert p.prix_unitaire_eur == pytest.approx(2.93, abs=0.05)
 
 
-def test_chiffrer_piece_003_paliers(session):
+def test_chiffrer_piece_support_paliers(session):
     """§8.4 : coûts unitaires 63,25 / 7,75 / 1,65 € aux paliers 1 / 10 / 1000."""
-    result = chiffrer(piece_003(), MATIERE, session, composants=[("ES-M6-A", 2)])
+    result = chiffrer(piece_support(), MATIERE, session, composants=[("ES-M6-A", 2)])
     assert _palier(result, 1).cout_unitaire_eur == pytest.approx(63.25, abs=0.3)
     assert _palier(result, 10).cout_unitaire_eur == pytest.approx(7.75, abs=0.1)
     assert _palier(result, 1000).cout_unitaire_eur == pytest.approx(1.65, abs=0.05)
@@ -361,23 +361,23 @@ def test_chiffrer_piece_003_paliers(session):
 
 def test_chiffrer_paliers_defaut_depuis_base(session):
     """Sans argument, les paliers viennent du paramètre paliers_quantite."""
-    result = chiffrer(piece_003(), MATIERE, session, composants=[("ES-M6-A", 2)])
+    result = chiffrer(piece_support(), MATIERE, session, composants=[("ES-M6-A", 2)])
     assert [p.quantite for p in result.paliers] == [1, 10, 100, 1000]
 
 
 def test_chiffrer_paliers_explicites(session):
-    result = chiffrer(piece_003(), MATIERE, session, quantites=[25], composants=[])
+    result = chiffrer(piece_support(), MATIERE, session, quantites=[25], composants=[])
     assert [p.quantite for p in result.paliers] == [25]
 
 
 def test_chiffrer_quantite_invalide(session):
     with pytest.raises(ErreurChiffrage, match="Paliers de quantité invalides"):
-        chiffrer(piece_003(), MATIERE, session, quantites=[100, 0])
+        chiffrer(piece_support(), MATIERE, session, quantites=[100, 0])
 
 
 def test_chiffrer_marge_client(session):
     """CLI001 a une marge spécifique de 18 % : prix = coût ÷ 0,82."""
-    result = chiffrer(piece_003(), MATIERE, session, composants=[("ES-M6-A", 2)], client_id="CLI001")
+    result = chiffrer(piece_support(), MATIERE, session, composants=[("ES-M6-A", 2)], client_id="CLI001")
     p = _palier(result, 100)
     assert p.prix_unitaire_eur == pytest.approx(p.cout_unitaire_eur / 0.82, rel=1e-9)
     assert p.prix_unitaire_eur == pytest.approx(2.20 / 0.82, abs=0.05)
@@ -385,17 +385,17 @@ def test_chiffrer_marge_client(session):
 
 def test_chiffrer_client_inconnu(session):
     with pytest.raises(ErreurChiffrage, match="Client inconnu"):
-        chiffrer(piece_003(), MATIERE, session, client_id="INCONNU")
+        chiffrer(piece_support(), MATIERE, session, client_id="INCONNU")
 
 
 def test_chiffrer_matiere_inconnue(session):
     with pytest.raises(ErreurChiffrage, match="Matière inconnue"):
-        chiffrer(piece_003(), "INCONNU", session)
+        chiffrer(piece_support(), "INCONNU", session)
 
 
 def test_chiffrer_faisabilite_bloquante(session):
     """Épaisseur non disponible pour la matière → blocage → pas de chiffrage."""
-    piece = piece_003()
+    piece = piece_support()
     piece.matiere.epaisseur = Champ[float](valeur=7.0)  # non dispo pour S235JR
     with pytest.raises(ErreurChiffrage, match="faisabilité bloquante"):
         chiffrer(piece, MATIERE, session)
@@ -403,7 +403,7 @@ def test_chiffrer_faisabilite_bloquante(session):
 
 def test_chiffrer_trace_complete(session):
     """Chaque bloc a sa ligne de trace (formule, valeurs, table, date du prix)."""
-    result = chiffrer(piece_003(), MATIERE, session, composants=[("ES-M6-A", 2)])
+    result = chiffrer(piece_support(), MATIERE, session, composants=[("ES-M6-A", 2)])
     blocs = {ligne.bloc for ligne in result.trace}
     assert blocs == {"matiere", "decoupe", "pliage", "soudure", "composants", "marge"}
     for ligne in result.trace:
@@ -420,7 +420,7 @@ def test_chiffrer_trace_complete(session):
 
 def test_chiffrer_piece_avec_traitement(session):
     """Une pièce avec traitement spécifié inclut la finition (max avec min de lot)."""
-    piece = piece_003()
+    piece = piece_support()
     piece.traitement.type = Champ[TypeTraitement](valeur="thermolaquage")
     result = chiffrer(piece, MATIERE, session, composants=[("ES-M6-A", 2)])
     p = _palier(result, 100)
