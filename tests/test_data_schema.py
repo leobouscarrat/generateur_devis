@@ -17,6 +17,7 @@ TABLES_ATTENDUES = {
     "clients",
     "historique_devis",
     "bornes_controle",
+    "modifications_referentiels",  # audit §12 (issue #33)
 }
 
 COLONNES_CONFIDENTIALITE_CLIENTS = {
