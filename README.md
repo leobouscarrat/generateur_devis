@@ -139,7 +139,7 @@ Le projet est découpé en deux parties.
 - [x] Logique métier du chiffrage ([docs/logique_metier.md](docs/logique_metier.md))
 - [x] Référentiels de données ([docs/sources_donnees.md](docs/sources_donnees.md))
 - [x] Architecture ([docs/architecture.md](docs/architecture.md)) et stack : Python, Streamlit, OpenRouter
-- [ ] Création des données simulées
-- [ ] Extraction, géométrie et faisabilité
+- [x] Création des données simulées
+- [x] Extraction, géométrie et faisabilité
 - [ ] Moteur de calcul des coûts
 - [ ] Interface et génération du devis
