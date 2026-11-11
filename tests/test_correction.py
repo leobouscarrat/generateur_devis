@@ -56,6 +56,21 @@ def piece_support() -> PieceExtraite:
     )
 
 
+def test_sections_creables_couvrent_toutes_les_sections_optionnelles():
+    """Garde-fou d'extension : toute section nullable du schéma doit être dans
+    SECTIONS_CREABLES (aujourd'hui : uniquement profil_pliage). Si une nouvelle
+    section optionnelle apparaît dans PieceExtraite, ce test échoue tant qu'elle
+    n'est pas déclarée créable."""
+    from generateur_devis.extraction.correction import SECTIONS_CREABLES
+
+    optionnelles = {
+        nom
+        for nom, champ in PieceExtraite.model_fields.items()
+        if champ.default is None  # default_factory → PydanticUndefined, pas None
+    }
+    assert optionnelles == set(SECTIONS_CREABLES)
+
+
 PROFIL_A_CREER = {
     "cotation": "exterieure",
     "rayon_pliage_general": 2.0,
