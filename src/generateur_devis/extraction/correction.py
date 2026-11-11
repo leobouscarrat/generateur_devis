@@ -1,0 +1,176 @@
+"""Assistant de correction en texte libre (issue #25, architecture §9).
+
+Deuxième point d'appel IA du parcours : l'utilisateur décrit une correction
+en texte libre (« c'est de l'inox 2 mm avec 4 écrous »), l'IA propose un
+**diff** borné — jamais une pièce réécrite. Le diff est validé contre le
+schéma, affiché avant/après, et l'utilisateur accepte ou refuse
+explicitement : aucun changement sans accord.
+
+Bornes V1 (tranchées dans la spec) :
+- ``remplacement`` sur des chemins **whitelistés** uniquement ;
+- ``ajout_composant`` pour la nomenclature (ex. les écrous du §4) ;
+- ``suppression`` refusée (erreur explicite) ;
+- application **transactionnelle** : un élément invalide annule tout le diff.
+"""
+
+from __future__ import annotations
+
+from typing import Any, Literal
+
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
+
+from generateur_devis.extraction.extracteur import extraire_json
+from generateur_devis.extraction.prompt import (
+    prompt_systeme_correction,
+    prompt_utilisateur_correction,
+)
+from generateur_devis.llm import creer_modele
+from generateur_devis.llm.base import ErreurModele
+from generateur_devis.schema.piece import Composant, PieceExtraite
+
+CHEMINS_AUTORISES: dict[str, type] = {
+    "matiere.designation.valeur": str,
+    "matiere.epaisseur.valeur": float,
+    "encombrement.largeur.valeur": float,
+    "profil_pliage.rayon_pliage_general": float,
+}
+"""Chemins modifiables par l'assistant (remplacement scalaire uniquement)."""
+
+
+class ErreurCorrection(Exception):
+    """Proposition ou application de correction invalide (message lisible)."""
+
+
+class DiffCorrection(BaseModel):
+    """Une modification proposée par l'IA, avec sa justification."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["remplacement", "ajout_composant"]
+    chemin: str | None = None
+    nouvelle_valeur: Any
+    justification: str = ""
+
+
+class PropositionCorrection(BaseModel):
+    """Réponse de l'assistant : le diff proposé + remarque éventuelle."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    diffs: list[DiffCorrection] = Field(default_factory=list)
+    remarque: str | None = None
+
+    def appliquer(self, piece: PieceExtraite) -> PieceExtraite:
+        """Applique le diff sur une copie de la pièce (transactionnel).
+
+        Tous les chemins sont validés **avant** application ; la copie
+        modifiée est re-validée par Pydantic — un seul élément invalide
+        annule tout le diff (ErreurCorrection).
+
+        Returns:
+            La pièce corrigée (l'originale n'est jamais modifiée).
+
+        Raises:
+            ErreurCorrection: chemin hors whitelist, type incompatible,
+                ou pièce résultante invalide.
+        """
+        corrigee = piece.model_copy(deep=True)
+        for diff in self.diffs:
+            _appliquer_diff(corrigee, diff)
+        try:
+            PieceExtraite.model_validate(corrigee.model_dump())
+        except ValidationError as e:
+            msg = f"La correction rend la fiche invalide : {e.errors()[0]['msg']}."
+            raise ErreurCorrection(msg) from e
+        return corrigee
+
+    def ligne_avant_apres(self, piece: PieceExtraite) -> list[tuple[str, str, str, str]]:
+        """Lignes d'affichage (champ, avant, après, justification)."""
+        lignes = []
+        for diff in self.diffs:
+            if diff.type == "remplacement":
+                avant = _lire_chemin(piece, diff.chemin or "")
+                lignes.append(
+                    (diff.chemin or "", str(avant), str(diff.nouvelle_valeur), diff.justification)
+                )
+            else:
+                lignes.append(("composants", "—", str(diff.nouvelle_valeur), diff.justification))
+        return lignes
+
+
+def _lire_chemin(piece: PieceExtraite, chemin: str) -> Any:
+    cible: Any = piece
+    for segment in chemin.split("."):
+        cible = getattr(cible, segment, None)
+    return cible
+
+
+def _appliquer_diff(piece: PieceExtraite, diff: DiffCorrection) -> None:
+    if diff.type == "remplacement":
+        chemin = diff.chemin or ""
+        if chemin not in CHEMINS_AUTORISES:
+            msg = f"Chemin non autorisé : {chemin!r}."
+            raise ErreurCorrection(msg)
+        type_attendu = CHEMINS_AUTORISES[chemin]
+        try:
+            valeur = type_attendu(diff.nouvelle_valeur)
+        except (TypeError, ValueError) as e:
+            msg = f"Valeur incompatible pour {chemin} : {diff.nouvelle_valeur!r}."
+            raise ErreurCorrection(msg) from e
+        segments = chemin.split(".")
+        cible: Any = piece
+        for segment in segments[:-1]:
+            cible = getattr(cible, segment, None)
+            if cible is None:
+                msg = f"Chemin inapplicable (section absente) : {chemin}."
+                raise ErreurCorrection(msg)
+        setattr(cible, segments[-1], valeur)
+    else:  # ajout_composant
+        try:
+            composant = Composant.model_validate(diff.nouvelle_valeur)
+        except ValidationError as e:
+            msg = f"Composant invalide : {e.errors()[0]['msg']}."
+            raise ErreurCorrection(msg) from e
+        piece.composants.append(composant)
+
+
+def proposer_correction(piece: PieceExtraite, texte: str, nom_modele: str) -> PropositionCorrection:
+    """Demande à l'IA un diff de correction pour la pièce courante.
+
+    Args:
+        piece: fiche courante (état du formulaire de validation).
+        texte: correction en texte libre de l'utilisateur.
+        nom_modele: désignation du modèle (``llm.creer_modele``) — aucune
+            valeur en dur.
+
+    Returns:
+        La proposition validée (chemins whitelistés, JSON conforme).
+
+    Raises:
+        ErreurCorrection: réponse IA illisible ou non conforme.
+    """
+    if not texte.strip():
+        msg = "Décrivez la correction à apporter."
+        raise ErreurCorrection(msg)
+    modele = creer_modele(nom_modele)
+    try:
+        reponse = modele.generer(
+            prompt_systeme_correction(),
+            prompt_utilisateur_correction(piece.model_dump_json(), texte),
+            [],
+        )
+    except ErreurModele as e:
+        msg = f"Assistant indisponible : {e}"
+        raise ErreurCorrection(msg) from e
+    try:
+        proposition = PropositionCorrection.model_validate_json(extraire_json(reponse.texte))
+    except (ValidationError, ValueError) as e:
+        msg = "Réponse de l'assistant illisible — reformulez la correction."
+        raise ErreurCorrection(msg) from e
+    # Validation précoce des chemins : une proposition hors whitelist est
+    # rejetée immédiatement, avant même l'affichage avant/après.
+    for diff in proposition.diffs:
+        if diff.type == "remplacement" and diff.chemin not in CHEMINS_AUTORISES:
+            msg = f"L'assistant propose un chemin non autorisé : {diff.chemin!r}."
+            raise ErreurCorrection(msg)
+    return proposition

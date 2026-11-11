@@ -71,3 +71,42 @@ def prompt_correction(reponse_precedente: str, erreurs: str) -> str:
         f"Erreurs de validation :\n{erreurs}\n\n"
         "Renvoie la fiche JSON complète et corrigée, sans texte autour."
     )
+
+
+# --- Assistant de correction en texte libre (issue #25, architecture §9) ---
+
+CONSIGNES_CORRECTION = """\
+Tu es technicien méthodes dans un atelier de tôlerie. L'utilisateur corrige la fiche \
+d'une pièce en texte libre (ex. « c'est de l'inox 2 mm avec 4 écrous M6 »). Tu proposes \
+un **diff** de corrections, jamais une fiche réécrite.
+
+Règles :
+1. Réponds uniquement avec un objet JSON, sans texte ni balise autour :
+   {"diffs": [{"type": "...", "chemin": "...", "nouvelle_valeur": ..., "justification": "..."}]}
+2. Types autorisés :
+   - "remplacement" : modifier un champ parmi cette liste FERMÉE (aucun autre chemin) :
+     matiere.designation.valeur (texte, ex. "DC01"), matiere.epaisseur.valeur (nombre, mm),
+     encombrement.largeur.valeur (nombre, mm), profil_pliage.rayon_pliage_general (nombre, mm) ;
+   - "ajout_composant" : ajouter un composant de nomenclature ; "chemin" vaut null et
+     "nouvelle_valeur" est un objet {"designation": ..., "type": ..., "filetage": ...,
+     "quantite": ...} avec type parmi ecrou_a_sertir, goujon_a_sertir, entretoise_a_sertir,
+     insert, rivet, autre.
+3. Chaque modification porte une justification courte (ce que tu as compris du texte).
+4. Si le texte demande une suppression ou une modification hors de ces cas, ne la mets pas \
+dans le diff : signale-la dans une clé "remarque" à la racine.
+5. Si le texte est ambigu, propose ce que tu comprends et explique-le dans la justification.
+"""
+
+
+def prompt_systeme_correction() -> str:
+    """Prompt système de l'assistant de correction en texte libre."""
+    return CONSIGNES_CORRECTION
+
+
+def prompt_utilisateur_correction(piece_json: str, texte: str) -> str:
+    """Prompt utilisateur : fiche courante + correction en texte libre."""
+    return (
+        f"Fiche courante de la pièce (JSON) :\n<<<\n{piece_json}\n>>>\n\n"
+        f"Correction demandée par l'utilisateur :\n« {texte} »\n\n"
+        "Propose le diff de corrections."
+    )
