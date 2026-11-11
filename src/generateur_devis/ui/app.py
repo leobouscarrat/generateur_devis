@@ -27,13 +27,14 @@ from generateur_devis.data.acces import (
     list_matieres,
 )
 from generateur_devis.data.db import get_session
-from generateur_devis.devis import Devis, Modification
+from generateur_devis.devis import Devis, Modification, emettre
 from generateur_devis.extraction.correction import (
     ErreurCorrection,
     PropositionCorrection,
     proposer_correction,
 )
 from generateur_devis.modele3d import ErreurGeometrie, construire_modele_3d
+from generateur_devis.pdf import generer_pdf_client
 from generateur_devis.schema.piece import (
     Aile,
     Champ,
@@ -152,14 +153,125 @@ def _champs_peu_surs(piece: PieceExtraite, session) -> list[str]:
     ]
 
 
+def _ecran_restitution() -> None:
+    """Écran 3 : restitution — vue interne / vue client, marge, émission (4.5).
+
+    Vue interne : tracé complet + encart « Le modèle propose ». Vue client :
+    prix et quantités seulement — les coûts ne sortent jamais (§6). Le PDF
+    client est généré à l'émission.
+    """
+    st.title("Restitution")
+    devis: Devis = st.session_state[CLE_DEVIS]
+    lecture_seule = devis.statut == "emis"
+    if lecture_seule:
+        st.info(f"Devis {devis.id} émis le {devis.date_emission:%d/%m/%Y} — lecture seule.")
+
+    # --- Encart « Le modèle propose » (vue interne) ----------------------------
+    piece = devis.piece_validee
+    with st.expander("🤖 Le modèle propose", expanded=False):
+        with get_session() as session_encart:
+            champs = _champs_peu_surs(piece, session_encart)
+        if champs:
+            st.caption("Champs lus avec confiance faible (corrigés ou à surveiller) :")
+            for champ in champs:
+                st.write(f"- {champ}")
+        corrections = [m for m in devis.modifications if m.champ == "correction_ia"]
+        if corrections:
+            st.caption("Corrections de l'assistant (proposées et leur issue) :")
+            for correction in corrections:
+                st.write(f"- « {correction.avant} » → {correction.apres}")
+        if not champs and not corrections:
+            st.write("Extraction conforme, aucune correction.")
+
+    # --- Vue client : prix et quantités seulement (§6) --------------------------
+    st.subheader("Vue client")
+    st.dataframe(
+        pd.DataFrame(
+            [
+                {
+                    "quantite": p.quantite,
+                    "prix_unitaire_eur": round(p.prix_unitaire_eur, 2),
+                    "prix_total_eur": round(p.prix_unitaire_eur * p.quantite, 2),
+                }
+                for p in devis.chiffrage.paliers
+            ]
+        ),
+        hide_index=True,
+        width="stretch",
+    )
+
+    # --- Marge (modifiable jusqu'à l'émission, rechiffrée depuis coûts figés) ---
+    if not lecture_seule:
+        with st.form("marge"):
+            marge = st.number_input(
+                "Marge",
+                min_value=0.0,
+                max_value=0.95,
+                value=float(devis.marge),
+                step=0.01,
+                format="%.2f",
+            )
+            if st.form_submit_button("Appliquer la marge") and marge != devis.marge:
+                devis.changer_marge(devis.auteur or "inconnu", marge)
+                st.rerun()
+
+    # --- Vue interne : tracé complet ---------------------------------------------
+    with st.expander("🔍 Vue interne — tracé du calcul"):
+        st.write(
+            f"Coût palier commandé ({devis.quantite_commandee}) : "
+            f"**{devis.palier_commande().cout_unitaire_eur:.2f} €** "
+            f"— marge {devis.marge:.0%}"
+        )
+        st.dataframe(
+            pd.DataFrame(
+                [
+                    {"bloc": t.bloc, "formule": t.formule, "table": t.table_origine}
+                    for t in devis.chiffrage.trace
+                ]
+            ),
+            hide_index=True,
+            width="stretch",
+        )
+
+    # --- Émission : historique + PDF client ---------------------------------------
+    if not lecture_seule:
+        if st.button("📤 Émettre le devis", type="primary"):
+            resultat: ResultatDevis | None = st.session_state.get(CLE_RESULTAT)
+            if resultat is None or resultat.flan is None:
+                st.error("Flan introuvable — réanalysez le plan avant émission.")
+                return
+            with get_session() as session:
+                emettre(devis, resultat.flan, devis.auteur or "inconnu", session)
+                session.commit()
+            st.session_state["pdf_client"] = generer_pdf_client(
+                devis, int(get_parametre("validite_devis_jours", session))
+            )
+            st.rerun()
+    if "pdf_client" in st.session_state:
+        st.download_button(
+            "📄 Télécharger le PDF client",
+            data=st.session_state["pdf_client"],
+            file_name=f"{devis.id}.pdf",
+            mime="application/pdf",
+        )
+
+    if st.button("Nouveau devis"):
+        for cle in (
+            CLE_RESULTAT,
+            CLE_DEVIS,
+            CLE_CONTEXTE,
+            CLE_PIECE_CORRIGEE,
+            CLE_PROPOSITION,
+            CLE_CORRECTIONS,
+            "pdf_client",
+        ):
+            st.session_state.pop(cle, None)
+        st.rerun()
+
+
 def main() -> None:
     if st.session_state.get(CLE_DEVIS) is not None:
-        devis: Devis = st.session_state[CLE_DEVIS]
-        st.success(f"Pièce validée — devis {devis.id} prêt pour l'émission (étape suivante).")
-        if st.button("Nouveau devis"):
-            st.session_state.pop(CLE_RESULTAT, None)
-            st.session_state.pop(CLE_DEVIS, None)
-            st.rerun()
+        _ecran_restitution()
         return
     if st.session_state.get(CLE_RESULTAT) is None:
         ecran_depot()
