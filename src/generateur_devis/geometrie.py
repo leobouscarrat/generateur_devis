@@ -78,7 +78,7 @@ def calculer_bd(angle_degres: float, rayon_interieur: float, epaisseur: float, f
     )
 
 
-def _rayon_pli(pli: Pli, rayon_general: float | None, indice: int) -> float:
+def rayon_pli(pli: Pli, rayon_general: float | None, indice: int) -> float:
     """Rayon intérieur d'un pli : cote du pli, sinon note générale, sinon erreur."""
     rayon = pli.rayon_interieur if pli.rayon_interieur is not None else rayon_general
     if rayon is None:
@@ -113,7 +113,7 @@ def longueur_developpee(piece: PieceExtraite, facteur_k: float) -> float:
 
     epaisseur = _epaisseur(piece)
     total_ailes = sum(a.longueur for a in ailes)
-    rayons = [_rayon_pli(p, profil.rayon_pliage_general, i) for i, p in enumerate(plis)]
+    rayons = [rayon_pli(p, profil.rayon_pliage_general, i) for i, p in enumerate(plis)]
 
     if profil.cotation == "interieure":
         developpe = total_ailes + sum(
