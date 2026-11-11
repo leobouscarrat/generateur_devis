@@ -532,6 +532,16 @@ def _editer_piece(
         pd.DataFrame(lignes_profil, columns=["type", "longueur", "angle", "sens"]),
         num_rows="dynamic",
         key="editeur_profil",
+        column_config={
+            "type": st.column_config.SelectboxColumn(
+                "type", options=["aile", "pli"], required=True
+            ),
+            # « inconnu » inclus : valeur possible de l'extraction — la
+            # validation exige ensuite « haut » ou « bas ».
+            "sens": st.column_config.SelectboxColumn(
+                "sens", options=["haut", "bas", "inconnu"]
+            ),
+        },
     )
 
     st.caption("Trous (rond : diamètre ; oblong/carré/rectangulaire : longueur × largeur)")
@@ -551,6 +561,13 @@ def _editer_piece(
         ),
         num_rows="dynamic",
         key="editeur_trous",
+        column_config={
+            "forme": st.column_config.SelectboxColumn(
+                "forme",
+                options=["rond", "oblong", "carre", "rectangulaire", "autre"],
+                required=True,
+            ),
+        },
     )
 
     elements: list[Aile | Pli] = []
