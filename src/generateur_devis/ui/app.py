@@ -44,7 +44,26 @@ TYPES_PLAN = ["pdf", "png", "jpg", "jpeg", "webp"]
 CLE_RESULTAT = "resultat_devis"
 CLE_DEVIS = "devis"
 CLE_CONTEXTE = "contexte"
-SEUIL_CONFIANCE = 0.7
+
+
+def _champs_peu_surs(piece: PieceExtraite, session) -> list[str]:
+    """Champs du parcours lus avec une confiance sous le seuil (anomalies en tête).
+
+    Seuil lu dans le paramètre ``seuil_confiance_champs`` (aucune valeur en dur).
+    """
+    seuil = float(get_parametre("seuil_confiance_champs", session))
+    champs: list[tuple[str, Champ]] = [
+        ("matière (désignation)", piece.matiere.designation),
+        ("épaisseur", piece.matiere.epaisseur),
+        ("largeur d'encombrement", piece.encombrement.largeur),
+        ("référence", piece.identification.reference),
+        ("désignation pièce", piece.identification.designation),
+    ]
+    return [
+        f"{nom} : confiance {champ.confiance:.0%}"
+        for nom, champ in champs
+        if champ.confiance is not None and champ.confiance < seuil
+    ]
 
 
 def main() -> None:
@@ -129,22 +148,6 @@ def _afficher_constats(resultat: ResultatDevis) -> None:
 # ---------------------------------------------------------------------------
 # Écran 2 — validation humaine (issue #24)
 # ---------------------------------------------------------------------------
-
-
-def _champs_peu_surs(piece: PieceExtraite) -> list[str]:
-    """Champs du parcours lus avec une confiance sous le seuil (anomalies en tête)."""
-    champs: list[tuple[str, Champ]] = [
-        ("matière (désignation)", piece.matiere.designation),
-        ("épaisseur", piece.matiere.epaisseur),
-        ("largeur d'encombrement", piece.encombrement.largeur),
-        ("référence", piece.identification.reference),
-        ("désignation pièce", piece.identification.designation),
-    ]
-    return [
-        f"{nom} : confiance {champ.confiance:.0%}"
-        for nom, champ in champs
-        if champ.confiance is not None and champ.confiance < SEUIL_CONFIANCE
-    ]
 
 
 def _editer_piece(piece: PieceExtraite, matieres: list[str]) -> tuple[PieceExtraite, str]:
@@ -260,7 +263,7 @@ def ecran_validation() -> None:
         # --- Anomalies et alertes en tête ------------------------------------
         for probleme in editee.problemes_coherence():
             st.warning(f"⚠️ Cohérence : {probleme}")
-        for champ in _champs_peu_surs(editee):
+        for champ in _champs_peu_surs(editee, session):
             st.warning(f"⚠️ Lecture incertaine — {champ}")
 
         # --- Recalcul immédiat (chaque modification ré-exécute le script) ----
