@@ -610,6 +610,48 @@ def _ligne_remplie(ligne: dict) -> bool:
     )
 
 
+AIDE_PROFIL = (
+    "une ligne par aile et par pli, dans l'ordre de la vue de côté ; "
+    "pièce plate : une seule aile (longueur à plat)"
+)
+HORS_PERIMETRE_V1 = (
+    "pièce non décrite par un profil à plis parallèles (plis sur plusieurs côtés, "
+    "assemblage) : hors périmètre V1, utilisez « Retour au dépôt »"
+)
+
+
+def explication_profil(profil: ProfilPliage | None) -> str:
+    """Origine du contenu du tableau du profil, affichée sous le tableau (issue #59).
+
+    Toujours non vide : profil non lu → comment le saisir (pièce plate = une
+    seule aile) et le cas hors périmètre V1 ; profil lu → nombre d'ailes et de
+    plis. Un profil créé par l'assistant IA compte comme lu (la correction est
+    tracée dans le journal de l'assistant).
+    """
+    if profil is None:
+        return (
+            f"Profil de pliage : non lu sur le plan, à saisir — {AIDE_PROFIL}. "
+            f"Si {HORS_PERIMETRE_V1}."
+        )
+    n_ailes = sum(isinstance(e, Aile) for e in profil.elements)
+    n_plis = len(profil.elements) - n_ailes
+    return f"Profil de pliage : lu sur le plan ({n_ailes} aile(s), {n_plis} pli(s))."
+
+
+def erreur_profil_vide(lignes_profil: list[dict]) -> str | None:
+    """Erreur bloquante si aucune ligne du profil n'est remplie, sinon None.
+
+    Intercepte au formulaire le refus du moteur (« Profil de pliage absent »),
+    avec un message qui dit comment s'en sortir (issue #59).
+    """
+    if any(_ligne_remplie(ligne) for ligne in lignes_profil):
+        return None
+    return (
+        f"Profil de pliage vide : saisissez-le dans le tableau ci-dessus — {AIDE_PROFIL}. "
+        f"Si {HORS_PERIMETRE_V1}."
+    )
+
+
 def _valider_lignes(lignes_profil: list[dict], lignes_trous: list[dict]) -> list[str]:
     """Valide les lignes des data_editor — aucune suppression silencieuse.
 
@@ -954,6 +996,9 @@ def _editer_piece(
             ),
         },
     )
+    lignes_profil_editees = tableau_profil.to_dict("records")
+    erreur_profil = erreur_profil_vide(lignes_profil_editees)
+    st.caption(("⛔ " if erreur_profil else "") + explication_profil(piece.profil_pliage))
 
     st.caption("Trous (rond : diamètre ; oblong/carré/rectangulaire : longueur × largeur)")
     tableau_trous = st.data_editor(
@@ -982,7 +1027,6 @@ def _editer_piece(
     )
 
     elements: list[Aile | Pli] = []
-    lignes_profil_editees = tableau_profil.to_dict("records")
     lignes_trous_editees = tableau_trous.to_dict("records")
     erreurs = [matiere.explication] if matiere_id is None else []
     erreurs += [
@@ -992,6 +1036,8 @@ def _editer_piece(
         for libelle, saisie in zip(initiales, (epaisseur, largeur, rayon_general), strict=True)
         if saisie is None
     ]
+    if erreur_profil:
+        erreurs.append(erreur_profil)
     erreurs += _valider_lignes(lignes_profil_editees, lignes_trous_editees)
     if erreurs:
         return None, matiere_id, erreurs

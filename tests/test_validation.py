@@ -46,6 +46,8 @@ from generateur_devis.ui.app import (
     _editer_piece,
     _ligne_remplie,
     _valider_lignes,
+    erreur_profil_vide,
+    explication_profil,
     libelle_composant,
     lire_composants,
     matiere_initiale,
@@ -384,14 +386,62 @@ def _editer(piece: PieceExtraite):
     return _editer_piece(piece, choix, matiere)
 
 
-def test_editer_piece_profil_vide_donne_profil_none(monkeypatch):
-    """Toutes les lignes du profil supprimées → profil None, pas le profil extrait."""
+def test_editer_piece_profil_vide_bloque_au_formulaire(monkeypatch):
+    """Toutes les lignes du profil supprimées → erreur qui guide (#59), jamais le
+    profil extrait conservé en silence (#65)."""
     vide = pd.DataFrame([], columns=["type", "longueur", "angle", "sens"])
     monkeypatch.setattr("generateur_devis.ui.app.st.data_editor", _faux_data_editor(vide, None))
     editee, _, erreurs = _editer(piece_support(MATIERE))
+    assert editee is None
+    assert len(erreurs) == 1
+    assert erreurs[0].startswith("Profil de pliage vide : saisissez-le")
+
+
+# --- Profil absent ou vide : message qui guide (issue #59) -------------------
+
+
+def test_explication_profil_non_lu_guide_et_nomme_hors_perimetre():
+    texte = explication_profil(None)
+    assert texte.startswith("Profil de pliage : non lu sur le plan, à saisir")
+    assert "une seule aile" in texte
+    assert "hors périmètre V1" in texte
+    assert "Retour au dépôt" in texte
+
+
+def test_explication_profil_lu_compte_ailes_et_plis():
+    profil = piece_support(MATIERE).profil_pliage
+    assert explication_profil(profil) == (
+        "Profil de pliage : lu sur le plan (3 aile(s), 2 pli(s))."
+    )
+
+
+@pytest.mark.parametrize(
+    "lignes",
+    [[], [{"type": None, "longueur": NAN, "angle": NAN, "sens": None}]],
+)
+def test_erreur_profil_vide_guide(lignes):
+    erreur = erreur_profil_vide(lignes)
+    assert erreur is not None
+    assert "saisissez" in erreur
+    assert "une seule aile" in erreur
+    assert "hors périmètre V1" in erreur
+
+
+def test_erreur_profil_vide_aucune_si_une_aile():
+    lignes = [{"type": "aile", "longueur": 75.0, "angle": None, "sens": None}]
+    assert erreur_profil_vide(lignes) is None
+
+
+def test_editer_piece_profil_non_lu_puis_aile_saisie_piece_plate(monkeypatch):
+    """Profil non lu, une aile saisie → recalcul débloqué (pièce plate)."""
+    piece = piece_support(MATIERE)
+    piece.profil_pliage = None
+    profil = pd.DataFrame([_aile(75.0)], columns=["type", "longueur", "angle", "sens"])
+    monkeypatch.setattr("generateur_devis.ui.app.st.data_editor", _faux_data_editor(profil, None))
+    editee, _, erreurs = _editer(piece)
     assert erreurs == []
     assert editee is not None
-    assert editee.profil_pliage is None
+    assert [e.longueur for e in editee.profil_pliage.elements] == [75.0]
 
 
 def test_editer_piece_ligne_neuve_nan_sans_trou_fantome(monkeypatch):
