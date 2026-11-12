@@ -7,8 +7,10 @@ impossible en l'état) — docs/architecture.md §3b.
 
 Aucune valeur en dur : les seuils (multiples de l'épaisseur) sont des
 paramètres globaux lus en base (``regle_diam_trou_min_e``, ``regle_aile_min_e``,
-``regle_rayon_min_e``), les épaisseurs et formats de tôle viennent de
-``epaisseurs_dispo``, les compatibilités de ``traitements``.
+``regle_rayon_min_e``, ``regle_rayon_max_e``, ``regle_rayon_max_aile`` — ce
+dernier en multiple de la plus courte aile adjacente au pli), les épaisseurs
+et formats de tôle viennent de ``epaisseurs_dispo``, les compatibilités de
+``traitements``.
 
 Limites V1 (données absentes, voir spécification de l'issue) :
 - distances trou/bord et trou/pli : positions des trous non extraites ;
@@ -52,6 +54,17 @@ def _parse_format(format_mm: str) -> tuple[float, float]:
     """« 3000 × 1500 » → (3000.0, 1500.0)."""
     a, b = format_mm.lower().replace("x", "×").split("×")
     return float(a.strip()), float(b.strip())
+
+
+def plus_courte_aile_adjacente(elements: list[Aile | Pli], indice: int) -> float | None:
+    """Longueur de la plus courte aile voisine de l'élément ``indice``, ou None.
+
+    Seuls les voisins immédiats de type ``Aile`` comptent : un profil non
+    alterné (pli voisin d'un pli) ne lève jamais d'exception.
+    """
+    voisins = [elements[j] for j in (indice - 1, indice + 1) if 0 <= j < len(elements)]
+    longueurs = [v.longueur for v in voisins if isinstance(v, Aile)]
+    return min(longueurs) if longueurs else None
 
 
 def evaluer_faisabilite(
@@ -151,7 +164,7 @@ def evaluer_faisabilite(
                 )
             )
 
-    # --- Règles de pliage (alertes) ------------------------------------------
+    # --- Règles de pliage (alertes, sauf rayon > aile : blocage) -------------
     if piece.profil_pliage is not None:
         profil = piece.profil_pliage
         k_aile = float(get_parametre("regle_aile_min_e", session))
@@ -169,6 +182,8 @@ def evaluer_faisabilite(
                     )
                 )
         k_rayon = float(get_parametre("regle_rayon_min_e", session))
+        k_rayon_max = float(get_parametre("regle_rayon_max_e", session))
+        k_rayon_aile = float(get_parametre("regle_rayon_max_aile", session))
         for i, element in enumerate(profil.elements):
             if isinstance(element, Pli):
                 rayon = (
@@ -176,7 +191,35 @@ def evaluer_faisabilite(
                     if element.rayon_interieur is not None
                     else profil.rayon_pliage_general
                 )
-                if rayon is not None and rayon < k_rayon * e:
+                if rayon is None:
+                    continue
+                if rayon > k_rayon_max * e:
+                    constats.append(
+                        Constat(
+                            regle="rayon_max",
+                            severite="alerte",
+                            message=(
+                                f"Rayon {rayon:g} mm > {k_rayon_max:g} × épaisseur "
+                                f"({k_rayon_max * e:g} mm) : outillage spécial, à vérifier."
+                            ),
+                            champ=f"profil_pliage.elements[{i}]",
+                        )
+                    )
+                aile = plus_courte_aile_adjacente(profil.elements, i)
+                if aile is not None and rayon > k_rayon_aile * aile:
+                    constats.append(
+                        Constat(
+                            regle="rayon_aile",
+                            severite="blocage",
+                            message=(
+                                f"Rayon {rayon:g} mm plus grand que l'aile adjacente de "
+                                f"{aile:g} mm (maximum {k_rayon_aile:g} × aile) : pièce "
+                                "irréalisable telle que cotée, corrigez le rayon ou l'aile."
+                            ),
+                            champ=f"profil_pliage.elements[{i}]",
+                        )
+                    )
+                if rayon < k_rayon * e:
                     constats.append(
                         Constat(
                             regle="rayon_min",

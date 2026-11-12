@@ -41,7 +41,6 @@ from generateur_devis.extraction.correction import (
     PropositionCorrection,
     proposer_correction,
 )
-from generateur_devis.modele3d import ErreurGeometrie, construire_modele_3d
 from generateur_devis.pdf import generer_pdf_client
 from generateur_devis.schema.piece import (
     Aile,
@@ -54,7 +53,7 @@ from generateur_devis.schema.piece import (
 )
 from generateur_devis.ui.formatage import formater_valeur
 from generateur_devis.ui.pipeline import ResultatDevis, orchestrer_devis, rechiffrer
-from generateur_devis.ui.rendu3d import maillage_vers_figure
+from generateur_devis.ui.rendu3d import figure_modele_3d
 from generateur_devis.ui.ventilation import lignes_trace, ventilation_couts
 from generateur_devis.unites import ConversionUnites, message_unites, valeur_origine
 
@@ -1148,12 +1147,7 @@ def ecran_validation() -> None:
         # --- Modèle 3D + prix provisoire --------------------------------------
         col_3d, col_prix = st.columns(2)
         with col_3d:
-            raison = "Pas de profil de pliage : modèle 3D non représenté en V1."
-            try:
-                maillage = construire_modele_3d(editee, float(get_parametre("facteur_k", session)))
-                figure = maillage_vers_figure(maillage)
-            except ErreurGeometrie as e:
-                figure, raison = None, f"Modèle 3D non représenté : {e}"
+            figure, raison = figure_modele_3d(editee, float(get_parametre("facteur_k", session)))
             if figure is not None:
                 st.plotly_chart(figure, width="stretch")
             else:

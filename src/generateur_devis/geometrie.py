@@ -149,10 +149,13 @@ def longueur_developpee(piece: PieceExtraite, facteur_k: float) -> float:
         raise ErreurGeometrie(msg)
 
     if developpe <= 0:
+        rayons_txt = ", ".join(f"{r:g}" for r in dict.fromkeys(rayons))
         msg = (
             f"Cotes contradictoires : longueur développée négative ou nulle "
-            f"({formater_valeur('longueur_mm', developpe)} mm) "
-            f"à partir des ailes cotées {profil.cotation}."
+            f"({formater_valeur('longueur_mm', developpe)} mm) : les plis "
+            f"(épaisseur {epaisseur:g} mm, rayon {rayons_txt} mm) consomment plus que "
+            f"la somme des ailes cotées ({formater_valeur('longueur_mm', total_ailes)} mm). "
+            "Vérifiez l'épaisseur et le rayon de pliage."
         )
         raise ErreurGeometrie(msg)
     return developpe

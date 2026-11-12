@@ -400,3 +400,13 @@ def test_type_composant_par_type_extrait_garde_fou(seeded_session):
     assert set(TYPE_COMPOSANT_PAR_TYPE_EXTRAIT) <= litteraux
     types_referentiel = {c.type for c in list_composants(seeded_session)}
     assert set(TYPE_COMPOSANT_PAR_TYPE_EXTRAIT.values()) <= types_referentiel
+
+
+def test_get_parametre_seuils_rayon(seeded_session):
+    """Seuils des règles de rayon (#66) : floats 8,0 et 1,0."""
+    rayon_max_e = get_parametre("regle_rayon_max_e", seeded_session)
+    rayon_max_aile = get_parametre("regle_rayon_max_aile", seeded_session)
+    assert isinstance(rayon_max_e, float)
+    assert isinstance(rayon_max_aile, float)
+    assert rayon_max_e == 8.0
+    assert rayon_max_aile == 1.0

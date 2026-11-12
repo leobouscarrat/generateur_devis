@@ -283,3 +283,19 @@ def test_longueur_developpee_profil_incoherent(elements):
 def test_verifier_alternance_profils_valides():
     verifier_alternance(piece_support().profil_pliage)
     verifier_alternance(ProfilPliage(elements=[Aile(longueur=75.0)]))
+
+
+def test_cotes_contradictoires_nomment_epaisseur_et_rayon():
+    """e = 30, R = 2 : BD = 2 × 32 − π/2 × 14 ≈ 42,01 ; 82 − 2 × 42,01 ≈ −2,02 mm."""
+    piece = piece_support()
+    piece.matiere.epaisseur = Champ[float](valeur=30.0)
+    with pytest.raises(ErreurGeometrie) as exc:
+        construire_flan(piece, DENSITE_ACIER, FACTEUR_K)
+    message = str(exc.value)
+    assert message.startswith("Cotes contradictoires")
+    assert "-2.02 mm" in message
+    assert "épaisseur 30 mm" in message
+    assert "rayon 2 mm" in message
+    assert "82.00 mm" in message
+    assert "Vérifiez l'épaisseur et le rayon de pliage" in message
+    assert "exterieure" not in message
