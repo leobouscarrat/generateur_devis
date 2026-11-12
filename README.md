@@ -71,7 +71,7 @@ uv run python -m generateur_devis.extraction PLAN.pdf --modele claude-code:sonne
 uv run python -m generateur_devis.extraction PLAN.pdf --modele openrouter:<modèle> --sortie fiche.json
 ```
 
-Pendant l'étude, les réponses sont mises en cache dans `results/cache/` : un même plan n'est jamais redemandé au même modèle. L'application, elle, ne garde aucune réponse sur disque.
+Pendant l'étude, les réponses sont mises en cache dans `results/cache/` : un même plan n'est jamais redemandé au même modèle. L'application, elle, ne garde aucune réponse sur disque : les extractions réussies sont gardées en mémoire du serveur jusqu'à son redémarrage, et un plan redéposé (après un rechargement de page, par exemple) est repris sans nouvel appel IA.
 
 Évaluer un modèle sur un jeu (cadsy, ecado, prive, tolerie, tolerie_erreurs ou tolerie_incoherences), partie développement ou test :
 

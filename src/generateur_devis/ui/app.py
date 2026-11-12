@@ -36,6 +36,7 @@ from generateur_devis.data.acces import (
 )
 from generateur_devis.data.db import get_session
 from generateur_devis.devis import Devis, ErreurDevis, Modification, emettre
+from generateur_devis.extraction import ResultatExtraction
 from generateur_devis.extraction.correction import (
     ErreurCorrection,
     PropositionCorrection,
@@ -86,6 +87,23 @@ CLES_VALIDATION = (
     "editeur_trous",
     "editeur_composants",
 )
+
+# Un F5 ouvre une nouvelle session Streamlit : tout l'état du devis est perdu (#68).
+AVERTISSEMENT_RECHARGEMENT = (
+    "Ne rechargez pas la page et n'utilisez pas le retour arrière du navigateur : "
+    "le devis en cours et ses corrections seraient perdus. Utilisez « Retour au dépôt »."
+)
+AVERTISSEMENT_RECHARGEMENT_RESTITUTION = (
+    "Ne rechargez pas la page et n'utilisez pas le retour arrière du navigateur : "
+    "le devis non émis serait perdu. Émettez-le pour l'enregistrer."
+)
+
+
+@st.cache_resource
+def _memoire_extractions() -> dict[str, ResultatExtraction]:
+    """Extractions réussies, partagées par les sessions du serveur jusqu'à son
+    redémarrage ; jamais sur disque (§11)."""
+    return {}
 
 
 @dataclass(frozen=True)
@@ -368,6 +386,8 @@ def _ecran_restitution() -> None:
     lecture_seule = devis.statut == "emis"
     if lecture_seule:
         st.info(f"Devis {devis.id} émis le {devis.date_emission:%d/%m/%Y} — lecture seule.")
+    else:
+        st.caption("⚠️ " + AVERTISSEMENT_RECHARGEMENT_RESTITUTION)
 
     # --- Encart « Le modèle propose » (vue interne) ----------------------------
     piece = devis.piece_validee
@@ -554,6 +574,10 @@ def ecran_depot() -> ResultatDevis | None:
             "modele_extraction", session
         )
 
+    st.caption(
+        "Un plan déjà analysé depuis le démarrage du serveur est repris immédiatement, "
+        "sans nouvel appel IA."
+    )
     if st.button(
         "Lancer l'analyse",
         disabled=plan is None or not nom_modele or quantites is None,
@@ -567,6 +591,7 @@ def ecran_depot() -> ResultatDevis | None:
                 matiere_id,
                 nom_modele,
                 session,
+                memoire=_memoire_extractions(),
             )
         if resultat.piece is None:
             # Aucune pièce (fichier illisible, extraction impossible) : on reste
@@ -1096,6 +1121,7 @@ def _editer_composants(
 def ecran_validation() -> None:
     """Écran 2 : validation humaine — anomalies en tête, 3D, recalcul immédiat."""
     st.title("Validation de la pièce")
+    st.caption("⚠️ " + AVERTISSEMENT_RECHARGEMENT)
     # Bouton unique, rendu en premier : reste accessible quoi qu'il arrive
     # plus bas (extraction échouée, saisie bloquée, erreur imprévue).
     if st.button("Retour au dépôt"):
@@ -1106,6 +1132,11 @@ def ecran_validation() -> None:
     if piece_extraite is None:
         st.error(resultat_initial.erreur or "Aucune pièce extraite.")
         return
+    if resultat_initial.extraction_reprise:
+        st.info(
+            "Plan déjà analysé : extraction reprise sans nouvel appel IA. "
+            "Les corrections faites avant un rechargement ne sont pas conservées."
+        )
     # Unité du plan avant le formulaire : visible même si la saisie est bloquée.
     if resultat_initial.conversion is not None:
         _afficher_unites(resultat_initial.conversion)
