@@ -241,7 +241,7 @@ def test_c10_ligne_avant_apres(monkeypatch):
         ]
     )
     lignes = proposition.ligne_avant_apres(piece)
-    assert lignes == [("matiere.epaisseur.valeur", "2.0", "3.0", "3 mm")]
+    assert lignes == [("Épaisseur (mm)", "2.00", "3.00", "3 mm")]
 
 
 # --- C11 : Journal des corrections dans le Devis ---------------------- ---

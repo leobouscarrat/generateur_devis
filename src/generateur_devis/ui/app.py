@@ -25,14 +25,17 @@ from generateur_devis.calcul_prix import calculer_bloc_finition
 from generateur_devis.controles_prix import evaluer_controles_prix
 from generateur_devis.data.acces import (
     TRAITEMENT_ID_PAR_TYPE,
+    TYPE_COMPOSANT_PAR_TYPE_EXTRAIT,
+    ComposantPydantic,
     get_client,
     get_parametre,
     get_traitement,
     list_clients,
+    list_composants,
     list_matieres,
 )
 from generateur_devis.data.db import get_session
-from generateur_devis.devis import Devis, Modification, emettre
+from generateur_devis.devis import Devis, ErreurDevis, Modification, emettre
 from generateur_devis.extraction.correction import (
     ErreurCorrection,
     PropositionCorrection,
@@ -43,6 +46,7 @@ from generateur_devis.pdf import generer_pdf_client
 from generateur_devis.schema.piece import (
     Aile,
     Champ,
+    Composant,
     PieceExtraite,
     Pli,
     ProfilPliage,
@@ -80,6 +84,7 @@ CLES_VALIDATION = (
     "texte_correction",
     "editeur_profil",
     "editeur_trous",
+    "editeur_composants",
 )
 
 
@@ -273,12 +278,13 @@ def _ecran_assistant(piece: PieceExtraite) -> None:
         st.caption(f"Correction : « {st.session_state.get('texte_en_cours', '')} »")
         if proposition.remarque:
             st.info(f"💬 {proposition.remarque}")
+        lignes = proposition.ligne_avant_apres(piece)
         st.table(
             {
-                "Champ": [c for c, _, _, _ in proposition.ligne_avant_apres(piece)],
-                "Avant": [a for _, a, _, _ in proposition.ligne_avant_apres(piece)],
-                "Après": [b for _, _, b, _ in proposition.ligne_avant_apres(piece)],
-                "Justification": [j for _, _, _, j in proposition.ligne_avant_apres(piece)],
+                "Champ": [c for c, _, _, _ in lignes],
+                "Avant": [a for _, a, _, _ in lignes],
+                "Après": [b for _, _, b, _ in lignes],
+                "Justification": [j for _, _, _, j in lignes],
             }
         )
         try:
@@ -293,6 +299,10 @@ def _ecran_assistant(piece: PieceExtraite) -> None:
         with col_ok:
             if st.button("✅ Accepter", disabled=piece_apres is None):
                 st.session_state[CLE_PIECE_CORRIGEE] = piece_apres
+                if piece_apres.composants != piece.composants:
+                    # Tableau à lignes fixes : ses éditions survivent à un
+                    # changement de valeurs et masqueraient la correction (#56).
+                    st.session_state.pop("editeur_composants", None)
                 _journaliser_correction(
                     st.session_state.get("texte_en_cours", ""), proposition, "acceptee"
                 )
@@ -365,13 +375,13 @@ def _ecran_restitution() -> None:
             [
                 {
                     "quantite": p.quantite,
-                    "prix_unitaire_eur": float(
-                        formater_valeur("prix_unitaire_eur", p.prix_unitaire_eur)
+                    # Chaînes formatées : un float perdrait les zéros finaux
+                    # (st.dataframe afficherait « 71.6 », « 72 »), cf. #60.
+                    "prix_unitaire_eur": formater_valeur(
+                        "prix_unitaire_eur", p.prix_unitaire_eur
                     ),
-                    "prix_total_eur": float(
-                        formater_valeur(
-                            "prix_unitaire_eur", p.prix_unitaire_eur * p.quantite
-                        )
+                    "prix_total_eur": formater_valeur(
+                        "prix_unitaire_eur", p.prix_unitaire_eur * p.quantite
                     ),
                 }
                 for p in devis.chiffrage.paliers
@@ -384,17 +394,21 @@ def _ecran_restitution() -> None:
     # --- Marge (modifiable jusqu'à l'émission, rechiffrée depuis coûts figés) ---
     if not lecture_seule:
         with st.form("marge"):
+            # Pas de min_value/max_value : la marge administrée n'est pas bornée
+            # et la planterait ; la seule règle est Devis.changer_marge (#62).
             marge = st.number_input(
                 "Marge",
-                min_value=0.0,
-                max_value=0.95,
                 value=float(devis.marge),
                 step=0.01,
                 format="%.2f",
             )
             if st.form_submit_button("Appliquer la marge") and marge != devis.marge:
-                devis.changer_marge(devis.auteur or "inconnu", marge)
-                st.rerun()
+                try:
+                    devis.changer_marge(devis.auteur or "inconnu", marge)
+                except ErreurDevis as e:
+                    st.error(f"⛔ {e}")
+                else:
+                    st.rerun()
 
     # --- Vue interne : alertes (contrôles prix, comparaison historique) ----------
     # Recalculées depuis le Devis (pièce, flan, matière validés, marge courante),
@@ -473,6 +487,21 @@ def main() -> None:
 # ---------------------------------------------------------------------------
 
 
+def parser_quantites(saisie: str) -> list[int]:
+    """Paliers de quantité saisis au dépôt : entiers > 0, dédoublonnés, triés croissants.
+
+    Les segments vides sont ignorés (« 10,,20 » → [10, 20]).
+
+    Raises:
+        ValueError: aucun entier, segment non entier (« 1.5 », « a ») ou valeur ≤ 0.
+    """
+    quantites = [int(q.strip()) for q in saisie.split(",") if q.strip()]
+    if not quantites or any(q <= 0 for q in quantites):
+        msg = f"Quantités invalides : {saisie!r}."
+        raise ValueError(msg)
+    return sorted(set(quantites))
+
+
 def ecran_depot() -> ResultatDevis | None:
     """Écran 1 : dépôt du plan + contexte commercial + lancement du pipeline."""
     st.title("Nouveau devis — dépôt du plan")
@@ -495,11 +524,11 @@ def ecran_depot() -> ResultatDevis | None:
         saisie = st.text_input("Quantités (séparées par des virgules)", ", ".join(paliers))
         quantites: list[int] | None = None
         try:
-            quantites = [int(q.strip()) for q in saisie.split(",") if q.strip()]
-            if not quantites or any(q <= 0 for q in quantites):
-                raise ValueError
+            quantites = parser_quantites(saisie)
         except ValueError:
             st.error("Quantités invalides : entiers positifs séparés par des virgules.")
+        else:
+            st.caption(f"Paliers retenus : {', '.join(map(str, quantites))}")
     # Modèle d'extraction : paramètre administrable (agent 5.2), invisible ici ;
     # la variable d'environnement MODELE_EXTRACTION surcharge le paramètre.
     with get_session() as session:
@@ -521,14 +550,19 @@ def ecran_depot() -> ResultatDevis | None:
                 nom_modele,
                 session,
             )
-        st.session_state[CLE_RESULTAT] = resultat
-        st.session_state[CLE_CONTEXTE] = {
-            "client_id": client_id,
-            "quantites": quantites,
-            "nom_modele": nom_modele,
-            "matiere_id": matiere_id,  # choix du dépôt, None si « (à extraire) »
-        }
-        st.rerun()
+        if resultat.piece is None:
+            # Aucune pièce (fichier illisible, extraction impossible) : on reste
+            # sur le dépôt, formulaire complet, pour déposer un autre fichier.
+            st.error(resultat.erreur or "Aucune pièce extraite.")
+        else:
+            st.session_state[CLE_RESULTAT] = resultat
+            st.session_state[CLE_CONTEXTE] = {
+                "client_id": client_id,
+                "quantites": quantites,
+                "nom_modele": nom_modele,
+                "matiere_id": matiere_id,  # choix du dépôt, None si « (à extraire) »
+            }
+            st.rerun()
 
     return st.session_state.get(CLE_RESULTAT)
 
@@ -654,6 +688,102 @@ def _valider_lignes(lignes_profil: list[dict], lignes_trous: list[dict]) -> list
         if quantite is None or quantite < 1:
             erreurs.append(f"Trou ligne {i} : quantité ≥ 1 attendue.")
     return erreurs
+
+
+def libelle_composant(c: ComposantPydantic) -> str:
+    """« ES-M6-A — Écrou à sertir M6 (0,20 €/u) », lot signalé si qte_min > 1."""
+    prix = formater_valeur("prix_unitaire_eur", c.prix_unitaire_eur).replace(".", ",")
+    lot = f", lot ≥ {c.qte_min}" if c.qte_min > 1 else ""
+    return f"{c.reference} — {c.designation} ({prix} €/u{lot})"
+
+
+@dataclass(frozen=True)
+class Rattachement:
+    """Pré-sélection de la référence d'un composant et sa raison (issue #56)."""
+
+    reference: str | None  # None = cellule vide
+    explication: str  # jamais vide, affichée dans la colonne « origine »
+
+
+def proposer_rattachement(
+    composant: Composant, referentiel: list[ComposantPydantic]
+) -> Rattachement:
+    """Candidats = type mappé (``TYPE_COMPOSANT_PAR_TYPE_EXTRAIT``) ET filetage égal.
+
+    Un seul candidat → pré-sélectionné « à confirmer » ; plusieurs → aucun
+    (l'utilisateur choisit, jamais un choix fait par le code) ; aucun → vide.
+    """
+    type_ref = TYPE_COMPOSANT_PAR_TYPE_EXTRAIT.get(composant.type)
+    candidats = (
+        [
+            c.reference
+            for c in referentiel
+            if c.type == type_ref and c.filetage == composant.filetage
+        ]
+        if type_ref is not None and composant.filetage is not None
+        else []
+    )
+    if len(candidats) == 1:
+        return Rattachement(
+            candidats[0],
+            f"Seule référence {type_ref} {composant.filetage} du référentiel : à confirmer.",
+        )
+    if candidats:
+        return Rattachement(
+            None, f"{len(candidats)} références possibles ({', '.join(candidats)}) : à choisir."
+        )
+    return Rattachement(
+        None, "Aucune référence correspondante au référentiel : à choisir ou à ajouter (admin)."
+    )
+
+
+@dataclass(frozen=True)
+class LectureComposants:
+    """Composants lus du data_editor (issue #56)."""
+
+    nomenclature: list[Composant]  # quantités éditées → editee.composants
+    a_chiffrer: list[tuple[str, int]]  # couples pour rechiffrer
+    non_chiffres: list[str]  # ⚠️ non bloquants
+    erreurs: list[str]  # ⛔ bloquantes
+
+
+def lire_composants(
+    nomenclature: list[Composant],
+    lignes: list[dict],
+    reference_par_libelle: dict[str, str],
+) -> LectureComposants:
+    """Relit le tableau des composants, lignes dans l'ordre de ``nomenclature``.
+
+    Schéma attendu des lignes : ``composant``, ``type``, ``filetage``,
+    ``quantite``, ``reference`` (libellé lisible), ``origine``. Seules
+    ``quantite`` (entier ≥ 1, lu NaN-sûr) et ``reference`` sont lues.
+    Référence vide → composant non chiffré (⚠️, non bloquant) ; quantité vide,
+    < 1 ou non entière → erreur bloquante.
+    """
+    lus: list[Composant] = []
+    a_chiffrer: list[tuple[str, int]] = []
+    non_chiffres: list[str] = []
+    erreurs: list[str] = []
+    for composant, ligne in zip(nomenclature, lignes, strict=True):
+        quantite = _nombre(ligne.get("quantite"))
+        if quantite is None or quantite < 1 or quantite != int(quantite):
+            erreurs.append(
+                f"Composant « {composant.designation} » : quantité entière ≥ 1 attendue."
+            )
+            lus.append(composant)
+            continue
+        quantite = int(quantite)
+        lus.append(composant.model_copy(update={"quantite": quantite}))
+        libelle = ligne.get("reference")
+        reference = reference_par_libelle.get(libelle) if isinstance(libelle, str) else None
+        if reference is None:
+            non_chiffres.append(
+                f"Composant non chiffré : {composant.designation} × {quantite} — "
+                "choisissez sa référence dans le tableau des composants."
+            )
+        else:
+            a_chiffrer.append((reference, quantite))
+    return LectureComposants(lus, a_chiffrer, non_chiffres, erreurs)
 
 
 def _choix_matieres(session) -> dict[str, str]:
@@ -903,6 +1033,48 @@ def _editer_piece(
     return editee, matiere_id, []
 
 
+def _editer_composants(
+    piece: PieceExtraite, referentiel: list[ComposantPydantic]
+) -> LectureComposants:
+    """Tableau des composants : référence du référentiel à choisir (issue #56)."""
+    if not piece.composants:
+        return LectureComposants([], [], [], [])
+    libelles = {libelle_composant(c): c.reference for c in referentiel}
+    libelle_par_reference = {ref: lib for lib, ref in libelles.items()}
+    rattachements = [proposer_rattachement(c, referentiel) for c in piece.composants]
+    st.caption(
+        "Composants (nomenclature) : choisissez la référence du référentiel pour les chiffrer"
+    )
+    tableau = st.data_editor(
+        pd.DataFrame(
+            [
+                {
+                    "composant": c.designation,
+                    "type": c.type,
+                    "filetage": c.filetage,
+                    "quantite": c.quantite,
+                    "reference": libelle_par_reference.get(r.reference),
+                    "origine": r.explication,
+                }
+                for c, r in zip(piece.composants, rattachements, strict=True)
+            ],
+            columns=["composant", "type", "filetage", "quantite", "reference", "origine"],
+        ),
+        num_rows="fixed",
+        key="editeur_composants",
+        disabled=["composant", "type", "filetage", "origine"],
+        column_config={
+            "quantite": st.column_config.NumberColumn(
+                "quantite", help="Lue sur le plan.", min_value=1, step=1, required=True
+            ),
+            "reference": st.column_config.SelectboxColumn(
+                "reference", options=list(libelles), required=False
+            ),
+        },
+    )
+    return lire_composants(piece.composants, tableau.to_dict("records"), libelles)
+
+
 def ecran_validation() -> None:
     """Écran 2 : validation humaine — anomalies en tête, 3D, recalcul immédiat."""
     st.title("Validation de la pièce")
@@ -941,21 +1113,32 @@ def ecran_validation() -> None:
         editee, matiere_id, erreurs_saisie = _editer_piece(
             piece, choix_matieres, matiere, resultat_initial.conversion
         )
-        if editee is None:
+        # Rendu même si la saisie est bloquée (pas de formulaire masqué).
+        composants = _editer_composants(piece, list_composants(session))
+        erreurs_saisie = erreurs_saisie + composants.erreurs
+        if editee is None or composants.erreurs:
             for erreur in erreurs_saisie:
                 st.error(f"⛔ Saisie incomplète — {erreur}")
             st.info("Corrigez le formulaire : aucun élément n'est supprimé silencieusement.")
             return
+        editee.composants = composants.nomenclature
 
         # --- Anomalies et alertes en tête ------------------------------------
         for probleme in editee.problemes_coherence():
             st.warning(f"⚠️ Cohérence : {probleme}")
         for champ in _champs_peu_surs(editee, session):
             st.warning(f"⚠️ Lecture incertaine — {champ}")
+        for message in composants.non_chiffres:
+            st.warning(f"⚠️ {message}")
 
         # --- Recalcul immédiat (chaque modification ré-exécute le script) ----
         resultat = rechiffrer(
-            editee, matiere_id, contexte.get("client_id"), contexte.get("quantites"), session
+            editee,
+            matiere_id,
+            contexte.get("client_id"),
+            contexte.get("quantites"),
+            session,
+            composants=composants.a_chiffrer,
         )
         _afficher_constats(resultat)
         if resultat.erreur:
@@ -981,12 +1164,14 @@ def ecran_validation() -> None:
                 st.table(
                     {
                         "Quantité": [p.quantite for p in resultat.chiffrage.paliers],
+                        # Chaînes formatées : un float reconverti perdrait l'arrondi
+                        # (st.table l'afficherait « 54.3600 », issue #60).
                         "Coût unitaire (€)": [
-                            float(formater_valeur("cout_unitaire_eur", p.cout_unitaire_eur))
+                            formater_valeur("cout_unitaire_eur", p.cout_unitaire_eur)
                             for p in resultat.chiffrage.paliers
                         ],
                         "Prix unitaire (€)": [
-                            float(formater_valeur("prix_unitaire_eur", p.prix_unitaire_eur))
+                            formater_valeur("prix_unitaire_eur", p.prix_unitaire_eur)
                             for p in resultat.chiffrage.paliers
                         ],
                     }
@@ -1004,15 +1189,12 @@ def ecran_validation() -> None:
                     [
                         {
                             "Bloc": ligne["bloc"],
-                            "Variable (€/pièce)": float(
-                                formater_valeur(
-                                    "cout_unitaire_eur", ligne["variable_eur_piece"]
-                                )
+                            # Chaînes formatées (2 décimales), cf. vue client.
+                            "Variable (€/pièce)": formater_valeur(
+                                "cout_unitaire_eur", ligne["variable_eur_piece"]
                             ),
-                            "Fixe (€/lot)": float(
-                                formater_valeur(
-                                    "cout_unitaire_eur", ligne["fixe_eur_lot"]
-                                )
+                            "Fixe (€/lot)": formater_valeur(
+                                "cout_unitaire_eur", ligne["fixe_eur_lot"]
                             ),
                             "Détail": ligne["detail"],
                         }

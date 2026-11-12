@@ -28,6 +28,16 @@ from generateur_devis.schema.piece import PieceExtraite
 StatutDevis = Literal["brouillon", "valide", "emis"]
 
 
+def marge_valide(marge: float) -> bool:
+    """Une marge est une fraction de prix : 0 (incluse) ≤ marge < 1 (exclue).
+
+    Seul endroit où la borne est écrite (``Devis.changer_marge``, agent admin).
+    À 1, prix = coût ÷ (1 − marge) divise par zéro ; au-delà, prix négatif.
+    NaN et ±inf sont refusés (les comparaisons sont fausses).
+    """
+    return 0 <= marge < 1
+
+
 class ErreurDevis(Exception):
     """Transition d'état ou modification interdite sur un devis."""
 
@@ -124,7 +134,7 @@ class Devis(BaseModel):
         tables de référence.
         """
         self._verrouiller_si_emis()
-        if not 0 <= marge < 1:
+        if not marge_valide(marge):
             msg = f"Marge invalide : {marge}."
             raise ErreurDevis(msg)
         self._journaliser(auteur, "marge", self.marge, marge)

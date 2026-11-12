@@ -13,6 +13,7 @@ from pydantic import ValidationError
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
+from generateur_devis.data.acces import list_composants
 from generateur_devis.data.seed import seed
 from generateur_devis.data.tables import Base
 from generateur_devis.modele3d import construire_modele_3d
@@ -20,6 +21,7 @@ from generateur_devis.schema.piece import (
     Aile,
     Champ,
     CoinCoupe,
+    Composant,
     Contours,
     Encombrement,
     Matiere,
@@ -36,13 +38,18 @@ from generateur_devis.ui.app import (
     CLE_PROPOSITION,
     CLE_RESULTAT,
     CLES_VALIDATION,
+    LectureComposants,
     MatiereInitiale,
+    Rattachement,
     ValeurInitiale,
     _champs_peu_surs,
     _editer_piece,
     _ligne_remplie,
     _valider_lignes,
+    libelle_composant,
+    lire_composants,
     matiere_initiale,
+    proposer_rattachement,
     revenir_au_depot,
     valeur_initiale,
 )
@@ -518,6 +525,7 @@ def test_cles_validation_couvrent_etat_et_editeurs():
         "texte_correction",
         "editeur_profil",
         "editeur_trous",
+        "editeur_composants",
     }
 
 
@@ -664,3 +672,136 @@ def test_champs_peu_surs_inclut_unite_du_plan(session):
     assert "unité du plan : confiance 40%" in _champs_peu_surs(piece, session)
     piece.unites = Champ[Unite](valeur="in", confiance=0.9)
     assert not [c for c in _champs_peu_surs(piece, session) if c.startswith("unité du plan")]
+
+
+# --- Composants rattachés au référentiel (issue #56) --------------------------
+
+
+@pytest.fixture
+def referentiel(session):
+    return list_composants(session)
+
+
+def _ref(referentiel, reference):
+    return next(c for c in referentiel if c.reference == reference)
+
+
+@pytest.mark.parametrize(
+    ("type_", "filetage", "attendue"),
+    [
+        ("ecrou_a_sertir", "M4", "ES-M4-A"),
+        ("ecrou_a_sertir", "M8", "ES-M8-A"),
+        ("goujon_a_sertir", "M6", "GS-M6-A"),
+        ("entretoise_a_sertir", "M4", "ENT-M4-10"),
+    ],
+)
+def test_proposer_rattachement_candidat_unique(referentiel, type_, filetage, attendue):
+    composant = Composant(designation="x", type=type_, filetage=filetage, quantite=2)
+    rattachement = proposer_rattachement(composant, referentiel)
+    assert rattachement.reference == attendue
+    assert "à confirmer" in rattachement.explication
+
+
+def test_proposer_rattachement_explication_candidat_unique(referentiel):
+    composant = Composant(designation="x", type="ecrou_a_sertir", filetage="M4")
+    assert proposer_rattachement(composant, referentiel) == Rattachement(
+        "ES-M4-A", "Seule référence ecrou_sertir M4 du référentiel : à confirmer."
+    )
+
+
+def test_proposer_rattachement_plusieurs_candidats_aucune_preselection(referentiel):
+    """Écrou M6 : ES-M6-A, ES-M6-B (lot), ES-M6-X (inox) → l'utilisateur choisit."""
+    composant = Composant(designation="Écrou M6", type="ecrou_a_sertir", filetage="M6")
+    assert proposer_rattachement(composant, referentiel) == Rattachement(
+        None, "3 références possibles (ES-M6-A, ES-M6-B, ES-M6-X) : à choisir."
+    )
+
+
+@pytest.mark.parametrize(
+    ("type_", "filetage"),
+    [
+        ("rivet", "M4"),
+        ("insert", "M6"),
+        ("autre", "M6"),
+        ("ecrou_a_sertir", None),
+        ("ecrou_a_sertir", "M12"),
+    ],
+)
+def test_proposer_rattachement_aucune_correspondance(referentiel, type_, filetage):
+    composant = Composant(designation="x", type=type_, filetage=filetage)
+    assert proposer_rattachement(composant, referentiel) == Rattachement(
+        None,
+        "Aucune référence correspondante au référentiel : à choisir ou à ajouter (admin).",
+    )
+
+
+def test_libelle_composant(referentiel):
+    assert libelle_composant(_ref(referentiel, "ES-M6-A")) == (
+        "ES-M6-A — Écrou à sertir M6 (0,20 €/u)"
+    )
+    assert libelle_composant(_ref(referentiel, "ES-M6-B")) == (
+        "ES-M6-B — Écrou à sertir M6 (lot 1000) (0,15 €/u, lot ≥ 1000)"
+    )
+
+
+ECROU_M6 = Composant(designation="Écrou M6", type="ecrou_a_sertir", filetage="M6", quantite=2)
+LIBELLE_A = "ES-M6-A — Écrou à sertir M6 (0,20 €/u)"
+PAR_LIBELLE = {LIBELLE_A: "ES-M6-A"}
+
+
+def _ligne(quantite, reference):
+    return {
+        "composant": "Écrou M6",
+        "type": "ecrou_a_sertir",
+        "filetage": "M6",
+        "quantite": quantite,
+        "reference": reference,
+        "origine": "…",
+    }
+
+
+def test_lire_composants_reference_choisie():
+    lecture = lire_composants([ECROU_M6], [_ligne(2, LIBELLE_A)], PAR_LIBELLE)
+    assert lecture.a_chiffrer == [("ES-M6-A", 2)]
+    assert lecture.non_chiffres == []
+    assert lecture.erreurs == []
+    assert lecture.nomenclature == [ECROU_M6]
+
+
+@pytest.mark.parametrize("vide", [None, "", float("nan")])
+def test_lire_composants_reference_vide_non_chiffre(vide):
+    lecture = lire_composants([ECROU_M6], [_ligne(2, vide)], PAR_LIBELLE)
+    assert lecture.a_chiffrer == []
+    assert lecture.erreurs == []
+    assert len(lecture.non_chiffres) == 1
+    assert "Écrou M6 × 2" in lecture.non_chiffres[0]
+    assert lecture.non_chiffres[0].startswith("Composant non chiffré")
+
+
+def test_lire_composants_quantite_modifiee():
+    lecture = lire_composants([ECROU_M6], [_ligne(3.0, LIBELLE_A)], PAR_LIBELLE)
+    assert lecture.nomenclature[0].quantite == 3
+    assert lecture.nomenclature[0].designation == "Écrou M6"
+    assert lecture.a_chiffrer == [("ES-M6-A", 3)]
+    assert ECROU_M6.quantite == 2  # entrée non mutée
+
+
+@pytest.mark.parametrize("quantite", [float("nan"), None, 0, -1, 2.5])
+def test_lire_composants_quantite_invalide_bloquante(quantite):
+    lecture = lire_composants([ECROU_M6], [_ligne(quantite, LIBELLE_A)], PAR_LIBELLE)
+    assert len(lecture.erreurs) == 1
+    assert "Écrou M6" in lecture.erreurs[0]
+    assert lecture.a_chiffrer == []
+
+
+def test_lire_composants_meme_reference_deux_lignes():
+    autre = Composant(designation="Écrou M6 bis", type="ecrou_a_sertir", filetage="M6")
+    lecture = lire_composants(
+        [ECROU_M6, autre], [_ligne(2, LIBELLE_A), _ligne(1, LIBELLE_A)], PAR_LIBELLE
+    )
+    assert lecture.a_chiffrer == [("ES-M6-A", 2), ("ES-M6-A", 1)]
+
+
+def test_lire_composants_vide():
+    lecture = lire_composants([], [], {})
+    assert lecture == LectureComposants([], [], [], [])
