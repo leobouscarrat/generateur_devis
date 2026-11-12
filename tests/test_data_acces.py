@@ -7,6 +7,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from generateur_devis.data.acces import (
+    TYPE_COMPOSANT_PAR_TYPE_EXTRAIT,
     get_bornes,
     get_client,
     get_composant,
@@ -16,6 +17,7 @@ from generateur_devis.data.acces import (
     get_temps_pliage,
     get_traitement,
     get_vitesse_coupe,
+    list_composants,
     list_epaisseurs,
     list_historique_similaires,
 )
@@ -359,3 +361,42 @@ def test_identifiant_inconnu_retourne_none(seeded_session):
     assert get_traitement("EXISTE_PAS", seeded_session) is None
     # get_client
     assert get_client("EXISTE_PAS", seeded_session) is None
+
+
+# ---------- list_composants (issue #56) ----------
+
+
+def test_list_composants_tous_tries(seeded_session):
+    """Les 8 références seedées, triées par référence."""
+    references = [c.reference for c in list_composants(seeded_session)]
+    assert references == [
+        "ENT-M4-10",
+        "ES-M4-A",
+        "ES-M5-A",
+        "ES-M6-A",
+        "ES-M6-B",
+        "ES-M6-X",
+        "ES-M8-A",
+        "GS-M6-A",
+    ]
+
+
+def test_list_composants_champs(seeded_session):
+    lot = next(c for c in list_composants(seeded_session) if c.reference == "ES-M6-B")
+    assert lot.designation == "Écrou à sertir M6 (lot 1000)"
+    assert lot.type == "ecrou_sertir"
+    assert lot.filetage == "M6"
+    assert lot.prix_unitaire_eur == pytest.approx(0.15)
+    assert lot.qte_min == 1000
+
+
+def test_type_composant_par_type_extrait_garde_fou(seeded_session):
+    """Clés = littéraux de Composant.type ; valeurs = types du référentiel seedé."""
+    import typing
+
+    from generateur_devis.schema.piece import Composant
+
+    litteraux = set(typing.get_args(Composant.model_fields["type"].annotation))
+    assert set(TYPE_COMPOSANT_PAR_TYPE_EXTRAIT) <= litteraux
+    types_referentiel = {c.type for c in list_composants(seeded_session)}
+    assert set(TYPE_COMPOSANT_PAR_TYPE_EXTRAIT.values()) <= types_referentiel
