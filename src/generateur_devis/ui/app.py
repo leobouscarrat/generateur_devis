@@ -298,6 +298,10 @@ def _ecran_assistant(piece: PieceExtraite) -> None:
         with col_ok:
             if st.button("✅ Accepter", disabled=piece_apres is None):
                 st.session_state[CLE_PIECE_CORRIGEE] = piece_apres
+                if piece_apres.composants != piece.composants:
+                    # Tableau à lignes fixes : ses éditions survivent à un
+                    # changement de valeurs et masqueraient la correction (#56).
+                    st.session_state.pop("editeur_composants", None)
                 _journaliser_correction(
                     st.session_state.get("texte_en_cours", ""), proposition, "acceptee"
                 )
