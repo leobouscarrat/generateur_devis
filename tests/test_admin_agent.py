@@ -31,7 +31,10 @@ from generateur_devis.data.tables import (
     ModificationReferentiel,
     Traitement,
 )
-from generateur_devis.extraction.prompt import prompt_systeme_admin
+from generateur_devis.extraction.prompt import (
+    prompt_systeme_admin,
+    prompt_utilisateur_admin,
+)
 from generateur_devis.llm.base import ReponseModele
 
 
@@ -390,6 +393,84 @@ def test_prompt_admin_enonce_la_borne_des_marges():
     assert "marge_specifique" in prompt
     assert "marge_defaut" in prompt
     assert "0 ≤ marge < 1" in prompt
+
+
+# --- Index des référentiels fourni à l'agent (issue #77) ----------------------
+
+
+def test_index_contient_les_libelles_metier(session):
+    index = admin_agent.index_referentiels(session)
+    assert "S235JR (acier, S235JR, EN 10025-2)" in index
+    assert "LASER_3KW (Laser fibre 3 kW)" in index
+    assert "modele_extraction" in index
+    assert "CLI001 (Client Alpha)" in index
+    assert "ES-M6-A (Écrou à sertir M6)" in index
+    assert "S235JR|2.0" in index
+    assert "LASER_3KW|acier|1.0" in index
+    assert "petite|300|3.0" in index
+
+
+def test_index_une_ligne_par_table_de_la_whitelist_seulement(session):
+    index = admin_agent.index_referentiels(session)
+    tables = [ligne.split(" : ")[0].removeprefix("- ") for ligne in index.splitlines()]
+    assert tables == list(REFERENTIELS_MODIFIABLES)
+    assert "historique_devis" not in index
+
+
+def test_index_clients_sans_donnees_confidentielles(session):
+    assert REFERENTIELS_MODIFIABLES["clients"].colonnes_index == ("nom",)
+    index = admin_agent.index_referentiels(session)
+    for client in session.scalars(select(Client)).all():
+        assert client.secteur not in index
+    for colonne in (
+        "ia_externe_autorisee", "reutilisation_autorisee", "suppression_si_refus",
+        "duree_conservation_plans_jours", "marge_specifique", "secteur",
+    ):
+        assert colonne not in index
+
+
+def test_index_sans_valeurs_courantes(session):
+    index = admin_agent.index_referentiels(session)
+    assert "1.15" not in index  # prix DC01 (€/kg)
+    assert "120" not in index  # taux horaire du laser (€/h)
+    assert "0.25" not in index  # marge_defaut
+    assert "0.18" not in index  # marge spécifique de CLI001
+
+
+def test_colonnes_index_existent_dans_les_modeles():
+    for nom, referentiel in REFERENTIELS_MODIFIABLES.items():
+        colonnes = set(referentiel.modele.__table__.c.keys())
+        assert set(referentiel.colonnes_index) <= colonnes, nom
+
+
+def test_index_ids_relisibles_par_trouver_ligne(session):
+    """Chaque ligne_id de l'index retrouve sa ligne (piège : clés composites float/int)."""
+    index = admin_agent.index_referentiels(session)
+    for ligne in index.splitlines():
+        table, contenu = ligne.removeprefix("- ").split(" : ", 1)
+        for entree in contenu.split(" ; "):
+            ligne_id = entree.split(" (")[0]
+            assert admin_agent._trouver_ligne(table, ligne_id, session) is not None
+
+
+def test_index_table_vide(session):
+    session.query(Traitement).delete()
+    index = admin_agent.index_referentiels(session)
+    assert "- traitements : (aucune ligne)" in index
+
+
+def test_prompt_utilisateur_contient_index_et_demande():
+    prompt = prompt_utilisateur_admin("le S235JR passe à 1,25 €/kg", "- matieres : S235JR")
+    assert "- matieres : S235JR" in prompt
+    assert "« le S235JR passe à 1,25 €/kg »" in prompt
+
+
+def test_prompt_systeme_demande_d_utiliser_l_index():
+    prompt = prompt_systeme_admin()
+    assert "index" in prompt
+    assert "N'invente jamais un identifiant" in prompt
+    # Les créations (règle 3) gardent une clé nouvelle, absente de l'index.
+    assert "la clé est nouvelle" in prompt
 
 
 @pytest.mark.parametrize("designation", ["modele-qui-nexiste-pas", "foo:bar", ""])

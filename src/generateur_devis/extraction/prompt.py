@@ -190,6 +190,13 @@ dans une clé "remarque" à la racine.
 7. Marges (clients.marge_specifique, parametres clé marge_defaut) : fraction \
 décimale avec 0 ≤ marge < 1 (25 % → 0.25, jamais 25 ni « 25 % »). Une marge hors \
 de cet intervalle n'est pas mise dans le diff : signale-la dans « remarque ».
+8. L'index des lignes existantes est fourni avec la demande. Pour une \
+« mise_a_jour », retrouve le "ligne_id" à partir du vocabulaire métier (nuance, nom \
+de poste, désignation, clé de paramètre…) et utilise-le tel qu'écrit dans l'index. \
+N'invente jamais un identifiant absent de l'index : si aucune ligne ne correspond, \
+ou si plusieurs correspondent, ne propose rien pour cette demande et signale-le dans \
+« remarque ». Pour une « creation », la clé est nouvelle : elle ne doit pas déjà \
+figurer dans l'index (sinon, signale-le dans « remarque »).
 """
 
 
@@ -198,6 +205,10 @@ def prompt_systeme_admin() -> str:
     return CONSIGNES_ADMIN
 
 
-def prompt_utilisateur_admin(texte: str) -> str:
-    """Prompt utilisateur : l'instruction en texte libre."""
-    return f"Mise à jour demandée par l'administrateur :\n« {texte} »\n\nPropose le diff."
+def prompt_utilisateur_admin(texte: str, index: str) -> str:
+    """Prompt utilisateur : index des lignes existantes + instruction en texte libre."""
+    return (
+        "Lignes existantes des référentiels (chaque entrée commence par son ligne_id) :\n"
+        f"<<<\n{index}\n>>>\n\n"
+        f"Mise à jour demandée par l'administrateur :\n« {texte} »\n\nPropose le diff."
+    )

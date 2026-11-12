@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from generateur_devis.data.audit import enregistrer_modification
@@ -59,6 +60,11 @@ class Referentiel:
     """Champs numériques qui doivent rester strictement positifs (prix, taux, temps)."""
     cles_etrangeres: dict[str, str] = field(default_factory=dict)
     """Champ → table référencée (la valeur doit être une clé existante)."""
+    colonnes_index: tuple[str, ...] = ()
+    """Colonnes du libellé lisible envoyé à l'agent dans l'index (#77).
+
+    Jamais de donnée sensible ni de valeur courante (prix, taux, marges).
+    """
 
 
 REFERENTIELS_MODIFIABLES: dict[str, Referentiel] = {
@@ -70,6 +76,7 @@ REFERENTIELS_MODIFIABLES: dict[str, Referentiel] = {
             "densite_kg_dm3": float, "prix_eur_kg": float, "fournisseur": str,
         },
         champs_positifs=frozenset({"densite_kg_dm3", "prix_eur_kg"}),
+        colonnes_index=("famille", "nuance", "norme"),
     ),
     "epaisseurs_dispo": Referentiel(
         EpaisseurDispo,
@@ -81,6 +88,7 @@ REFERENTIELS_MODIFIABLES: dict[str, Referentiel] = {
         ("id",),
         {"nom": str, "type": str, "taux_horaire_eur_h": float, "temps_reglage_min": float},
         champs_positifs=frozenset({"taux_horaire_eur_h", "temps_reglage_min"}),
+        colonnes_index=("nom",),
     ),
     "vitesses_coupe": Referentiel(
         VitesseCoupe,
@@ -100,6 +108,7 @@ REFERENTIELS_MODIFIABLES: dict[str, Referentiel] = {
         {"nom": str, "poste_id": str, "temps_s": float, "unite": str},
         champs_positifs=frozenset({"temps_s"}),
         cles_etrangeres={"poste_id": "postes"},
+        colonnes_index=("nom",),
     ),
     "composants": Referentiel(
         Composant,
@@ -111,6 +120,7 @@ REFERENTIELS_MODIFIABLES: dict[str, Referentiel] = {
         creation=True,
         champs_positifs=frozenset({"prix_unitaire_eur", "qte_min"}),
         cles_etrangeres={"operation_id": "operations"},
+        colonnes_index=("designation",),
     ),
     "traitements": Referentiel(
         Traitement,
@@ -121,8 +131,11 @@ REFERENTIELS_MODIFIABLES: dict[str, Referentiel] = {
         },
         creation=True,
         champs_positifs=frozenset({"prix", "minimum_lot_eur"}),
+        colonnes_index=("nom",),
     ),
-    "parametres": Referentiel(Parametre, ("cle",), {"valeur": str}),
+    "parametres": Referentiel(
+        Parametre, ("cle",), {"valeur": str}, colonnes_index=("description",)
+    ),
     "clients": Referentiel(
         Client,
         ("id",),
@@ -131,11 +144,14 @@ REFERENTIELS_MODIFIABLES: dict[str, Referentiel] = {
             "duree_conservation_plans_jours": int,
         },
         champs_positifs=frozenset({"duree_conservation_plans_jours"}),
+        # Confidentialité : seuls l'id et le nom du client partent vers l'IA.
+        colonnes_index=("nom",),
     ),
     "bornes_controle": Referentiel(
         BorneControle,
         ("champ",),
         {"min": float, "max": float, "niveau": str, "message": str},
+        colonnes_index=("message",),
     ),
 }
 
@@ -355,6 +371,32 @@ def _valider_valeur(
             raise ErreurAdmin(msg)
 
 
+def index_referentiels(session: Session) -> str:
+    """Index compact des lignes administrables, une ligne de texte par table.
+
+    Format : ``- <table> : <ligne_id> (<libellé>) ; <ligne_id> ; ...`` où
+    ``ligne_id`` est la clé primaire jointe par ``|`` (format relu par
+    `_trouver_ligne`, ex. ``S235JR|2.0``) et le libellé les valeurs non nulles
+    de `Referentiel.colonnes_index`. Lignes triées par clé, tables dans l'ordre
+    de la whitelist : seules les tables administrables y figurent
+    (``historique_devis`` exclu par construction).
+    """
+    lignes = []
+    for table, referentiel in REFERENTIELS_MODIFIABLES.items():
+        colonnes_pk = [referentiel.modele.__table__.c[c] for c in referentiel.pk]
+        entrees = []
+        for ligne in session.scalars(select(referentiel.modele).order_by(*colonnes_pk)):
+            ligne_id = "|".join(str(getattr(ligne, c)) for c in referentiel.pk)
+            libelle = ", ".join(
+                str(v)
+                for v in (getattr(ligne, c) for c in referentiel.colonnes_index)
+                if v is not None
+            )
+            entrees.append(f"{ligne_id} ({libelle})" if libelle else ligne_id)
+        lignes.append(f"- {table} : " + (" ; ".join(entrees) or "(aucune ligne)"))
+    return "\n".join(lignes)
+
+
 def proposer_modifications(texte: str, nom_modele: str, session: Session) -> PropositionAdmin:
     """Demande à l'IA un diff de mise à jour des référentiels.
 
@@ -385,7 +427,9 @@ def proposer_modifications(texte: str, nom_modele: str, session: Session) -> Pro
         msg = f"Agent indisponible : {e}"
         raise ErreurAdmin(msg) from e
     try:
-        reponse = modele.generer(prompt_systeme_admin(), prompt_utilisateur_admin(texte), [])
+        reponse = modele.generer(
+            prompt_systeme_admin(), prompt_utilisateur_admin(texte, index_referentiels(session)), []
+        )
     except ErreurModele as e:
         msg = f"Agent indisponible : {e}"
         raise ErreurAdmin(msg) from e
