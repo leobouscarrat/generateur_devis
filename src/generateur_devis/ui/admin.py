@@ -25,6 +25,11 @@ from generateur_devis.data.acces import get_parametre
 from generateur_devis.data.audit import historique
 from generateur_devis.data.db import get_session
 from generateur_devis.ui.auth import verifier_identifiants
+from generateur_devis.ui.consultation import (
+    LIBELLES_TABLES,
+    colonnes_consultables,
+    consulter_referentiel,
+)
 
 CLE_PROPOSITION_ADMIN = "proposition_admin"
 CLE_AUTEUR = "admin_auteur"
@@ -143,6 +148,25 @@ def main() -> None:
             if st.button("❌ Refuser"):
                 st.session_state.pop(CLE_PROPOSITION_ADMIN, None)
                 st.rerun()
+
+    # --- Consultation des référentiels (lecture seule, sans IA, #94) -----------
+    with st.expander("🔎 Consulter les référentiels"):
+        table = st.selectbox(
+            "Table",
+            list(LIBELLES_TABLES),
+            format_func=LIBELLES_TABLES.get,
+            key="consultation_table",
+        )
+        with get_session() as session:
+            lignes_ref = consulter_referentiel(table, session)
+        if lignes_ref:
+            st.dataframe(
+                pd.DataFrame(lignes_ref, columns=colonnes_consultables(table)),
+                hide_index=True,
+                width="stretch",
+            )
+        else:
+            st.info("Aucune ligne dans cette table.")
 
     # --- Historique des modifications (daté et attribué, §12) -------------------
     with st.expander("📜 Historique des modifications"):

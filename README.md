@@ -103,6 +103,8 @@ direction = "pilotage2026"
 
 Le nom de connexion devient l'auteur de chaque modification (audit daté et attribué, visible en bas de l'écran).
 
+La section « Consulter les référentiels » affiche en lecture seule, sans appel IA, les valeurs en vigueur de chaque table administrable (clé et champs modifiables par l'agent), pour formuler une mise à jour en connaissant la valeur actuelle.
+
 ## Structure du dépôt
 
 ```
