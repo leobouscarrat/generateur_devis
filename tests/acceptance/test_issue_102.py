@@ -178,6 +178,20 @@ def test_marge_zero_acceptee_avec_avertissement(monkeypatch):
     assert not _emettre(at).disabled
 
 
+def test_saisie_identique_a_la_marge_affichee_non_journalisee(monkeypatch):
+    """Réappliquer la marge affichée : aucune modification journalisée (spec #102)."""
+    _fabrique(monkeypatch)
+    at = _restitution()
+    nb_modifications = len(at.session_state[CLE_DEVIS].modifications)
+
+    _appliquer(at, 25.0)
+
+    assert not at.error
+    devis = at.session_state[CLE_DEVIS]
+    assert devis.marge == pytest.approx(0.25)
+    assert len(devis.modifications) == nb_modifications
+
+
 def test_marge_en_vigueur_hors_plage_bloque_l_emission(monkeypatch):
     """``marge_defaut`` muté en base à 0,97 : pas de plantage, ⛔ et émission désactivée."""
     _fabrique(monkeypatch, marge_defaut="0.97")

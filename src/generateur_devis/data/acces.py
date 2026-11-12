@@ -453,7 +453,7 @@ def get_traitement(traitement_id: str, session: Session) -> TraitementPydantic |
 def get_parametre(cle: str, session: Session) -> str | float | int:
     """Retourner la valeur du paramètre global identifié par ``cle ''.
 
-    Conversion TEXT → type Python selon la clé connue (8 clés seules) :
+    Conversion TEXT → type Python selon la clé connue :
 
     - marge_defaut, marge_max, rendement_calepinage,
       facteur_k                                      → float
