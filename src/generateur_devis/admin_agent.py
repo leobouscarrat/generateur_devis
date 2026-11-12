@@ -307,10 +307,12 @@ def _valider_modification(modif: ModificationAdmin, session: Session) -> None:
         raise ErreurAdmin(msg)
     ligne = _trouver_ligne(modif.table, modif.ligne_id, session)
     del ligne  # l'existence est vérifiée ; la lecture sert à l'avant/après
+    if _est_marge(modif.table, modif.ligne_id, modif.champ):
+        # Avant la coercition : un texte non numérique (« 25 % ») sur un champ
+        # float reçoit le message des marges, pas « Valeur incompatible ».
+        _valider_marge(modif.table, modif.ligne_id, modif.champ, modif.valeur)
     valeur = _coercer(modif.table, modif.champ, modif.valeur)
     _valider_valeur(referentiel, modif.table, modif.champ, valeur, session)
-    if _est_marge(modif.table, modif.ligne_id, modif.champ):
-        _valider_marge(modif.table, modif.ligne_id, modif.champ, valeur)
 
 
 def _est_marge(table: str, ligne_id: str, champ: str) -> bool:

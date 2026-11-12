@@ -309,7 +309,7 @@ def test_marge_defaut_non_numerique_refusee(monkeypatch, session, valeur):
     assert get_parametre("marge_defaut", session) == 0.25
 
 
-@pytest.mark.parametrize("valeur", [1.0, 25, -0.01])
+@pytest.mark.parametrize("valeur", [1.0, 25, -0.01, "25 %", "0,18"])
 def test_marge_client_hors_bornes_refusee_a_la_proposition(monkeypatch, session, valeur):
     _bouchon_modele(monkeypatch, _maj("clients", "CLI001", "marge_specifique", valeur))
     with pytest.raises(ErreurAdmin, match="Marge invalide"):
