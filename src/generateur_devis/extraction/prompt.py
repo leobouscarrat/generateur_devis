@@ -205,6 +205,11 @@ N'invente jamais un identifiant absent de l'index : si aucune ligne ne correspon
 ou si plusieurs correspondent, ne propose rien pour cette demande et signale-le dans \
 « remarque ». Pour une « creation », la clé est nouvelle : elle ne doit pas déjà \
 figurer dans l'index (sinon, signale-le dans « remarque »).
+9. Modèle d'IA (parametres clé modele_extraction) : désignation \
+« fournisseur:modèle », fournisseur parmi claude-code, openrouter, nous \
+(ex. claude-code:sonnet, openrouter:google/gemini-2.5-flash). Une valeur sans \
+fournisseur ou avec un fournisseur inconnu n'est pas mise dans le diff : \
+signale-la dans « remarque ».
 """
 
 

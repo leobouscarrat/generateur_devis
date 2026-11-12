@@ -39,7 +39,12 @@ from generateur_devis.extraction.prompt import (
     prompt_systeme_admin,
     prompt_utilisateur_admin,
 )
-from generateur_devis.llm import creer_modele
+from generateur_devis.llm import (
+    FOURNISSEURS,
+    MODELE_MAL_CONFIGURE,
+    creer_modele,
+    verifier_designation,
+)
 from generateur_devis.llm.base import ErreurModele
 from generateur_devis.ui.formatage import formater_valeur
 
@@ -327,6 +332,8 @@ def _valider_modification(modif: ModificationAdmin, session: Session) -> None:
         # Avant la coercition : un texte non numérique (« 25 % ») sur un champ
         # float reçoit le message des marges, pas « Valeur incompatible ».
         _valider_marge(modif.table, modif.ligne_id, modif.champ, modif.valeur)
+    if _est_modele_extraction(modif.table, modif.ligne_id, modif.champ):
+        _valider_modele_extraction(modif.valeur)
     valeur = _coercer(modif.table, modif.champ, modif.valeur)
     _valider_valeur(referentiel, modif.table, modif.champ, valeur, session)
 
@@ -355,6 +362,27 @@ def _valider_marge(table: str, ligne_id: str, champ: str, valeur: Any) -> None:
             "ex. 0.25 pour 25 %."
         )
         raise ErreurAdmin(msg)
+
+
+def _est_modele_extraction(table: str, ligne_id: str, champ: str) -> bool:
+    """Paramètre qui désigne le modèle d'IA (format « fournisseur:modèle »)."""
+    return (table, ligne_id, champ) == ("parametres", "modele_extraction", "valeur")
+
+
+def _valider_modele_extraction(valeur: Any) -> None:
+    """Lève ErreurAdmin si `valeur` n'est pas une désignation acceptée par `creer_modele`.
+
+    Même règle que `creer_modele` (`verifier_designation`), sans réseau : la
+    clé d'API et l'exécutable relèvent du serveur, pas de la base (issue #92).
+    """
+    try:
+        verifier_designation(str(valeur))
+    except ValueError as e:
+        msg = (
+            f"Modèle d'extraction invalide : {valeur!r} ({e}). Format attendu "
+            f"« fournisseur:modèle », fournisseurs connus : {', '.join(FOURNISSEURS)}."
+        )
+        raise ErreurAdmin(msg) from e
 
 
 def _valider_valeur(
@@ -418,10 +446,7 @@ def proposer_modifications(texte: str, nom_modele: str, session: Session) -> Pro
     try:
         modele = creer_modele(nom_modele)
     except ValueError as e:  # format « fournisseur:modèle » ou fournisseur inconnu
-        msg = (
-            "Modèle d'IA mal configuré (paramètre « modele_extraction » "
-            f"ou variable MODELE_EXTRACTION) : {e}"
-        )
+        msg = f"{MODELE_MAL_CONFIGURE} : {e}"
         raise ErreurAdmin(msg) from e
     except ErreurModele as e:  # construction : clé d'API absente, Claude Code introuvable
         msg = f"Agent indisponible : {e}"

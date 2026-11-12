@@ -515,3 +515,48 @@ def test_pipeline_anomalie_illisible_ordinaire_chiffre(monkeypatch, session):
     assert resultat.piece is not None
     assert resultat.piece.anomalies == [anomalie]
     assert resultat.chiffrage is not None
+
+
+# --- Modèle d'IA mal configuré (issue #92) ------------------------------------
+
+
+def _extraire_interdit(*args, **kwargs):
+    raise AssertionError("extraire ne doit pas être appelé")
+
+
+@pytest.mark.parametrize("designation", ["sonnet", "openrouter:", "foo:bar"])
+def test_pipeline_modele_mal_configure_message_clair(monkeypatch, session, tmp_path, designation):
+    """Vrai ``creer_modele`` : désignation invalide → erreur lisible, aucune pièce."""
+    from generateur_devis.llm import MODELE_MAL_CONFIGURE
+
+    monkeypatch.setattr(pipeline, "extraire", _extraire_interdit)
+    resultat = orchestrer_devis(
+        _pdf_support(tmp_path), "support.pdf", None, None, None, designation, session
+    )
+    assert resultat.piece is None
+    assert resultat.erreur is not None
+    assert resultat.erreur.startswith(MODELE_MAL_CONFIGURE)
+    assert "modele_extraction" in resultat.erreur and "MODELE_EXTRACTION" in resultat.erreur
+    assert "/tmp" not in resultat.erreur and ".py" not in resultat.erreur
+
+
+def test_pipeline_modele_sans_cle_api_message_clair(monkeypatch, session, tmp_path):
+    """``ErreurModele`` à la construction (clé absente) → erreur lisible, aucune pièce."""
+    monkeypatch.setattr("generateur_devis.llm.load_dotenv", lambda *a, **k: None)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.setattr(pipeline, "extraire", _extraire_interdit)
+    resultat = orchestrer_devis(
+        _pdf_support(tmp_path), "support.pdf", None, None, None, "openrouter:x", session
+    )
+    assert resultat.piece is None
+    assert resultat.erreur == (
+        "Modèle d'IA indisponible : openrouter : clé d'API manquante (voir .env.example)"
+    )
+
+
+def test_pipeline_fichier_illisible_prioritaire_sur_modele(monkeypatch, session):
+    """Un fichier illisible garde le message de #63, même avec un modèle invalide."""
+    from generateur_devis.extraction.documents import FICHIER_ILLISIBLE
+
+    resultat = orchestrer_devis(b"", "vide.pdf", None, None, None, "sonnet", session)
+    assert resultat.erreur == FICHIER_ILLISIBLE
