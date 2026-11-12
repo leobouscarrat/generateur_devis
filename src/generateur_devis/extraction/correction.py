@@ -28,6 +28,7 @@ from generateur_devis.extraction.prompt import (
 from generateur_devis.llm import creer_modele
 from generateur_devis.llm.base import ErreurModele
 from generateur_devis.schema.piece import (
+    Aile,
     CoinCoupe,
     Composant,
     ElementProfil,
@@ -36,6 +37,7 @@ from generateur_devis.schema.piece import (
     Soudure,
     Trou,
 )
+from generateur_devis.ui.formatage import formater_valeur
 
 SECTIONS_CREABLES: dict[str, type] = {"profil_pliage": ProfilPliage}
 """Sections absentes que l'assistant peut créer d'un bloc (objet complet)."""
@@ -92,6 +94,178 @@ CHEMINS_AUTORISES: dict[str, type] = {
 }
 """Chemins modifiables par l'assistant (remplacement scalaire uniquement)."""
 
+# --- Libellés d'affichage avant/après (issue #67) -----------------------------
+# Garde-fous dans tests/test_correction.py : toute extension de la whitelist ou
+# du schéma d'un élément sans libellé fait échouer les tests.
+
+LIBELLES_CHEMINS: dict[str, tuple[str, str]] = {
+    # chemin whitelisté -> (libellé affiché, clé passée à formater_valeur)
+    "matiere.designation.valeur": ("Matière", "designation"),
+    "matiere.epaisseur.valeur": ("Épaisseur (mm)", "epaisseur_mm"),
+    "encombrement.largeur.valeur": ("Largeur d'encombrement (mm)", "largeur_mm"),
+    "profil_pliage.rayon_pliage_general": ("Rayon de pliage général (mm)", "rayon_mm"),
+}
+"""Mêmes libellés que les champs de l'écran de validation (ui/app.py)."""
+
+LIBELLES_LISTES: dict[str, str] = {
+    "composants": "Composant",
+    "contours.trous": "Trou",
+    "contours.coins": "Coin",
+    "soudures": "Soudure",
+    "profil_pliage.elements": "Profil",
+}
+"""Libellé d'un élément de chaque liste modifiable."""
+
+LIBELLES_CHAMPS_ELEMENT: dict[str, tuple[str, str]] = {
+    # champ d'un élément (Trou, CoinCoupe, Soudure, Composant, Aile, Pli)
+    # -> (libellé affiché, clé passée à formater_valeur)
+    "forme": ("Forme", "forme"),
+    "diametre": ("Diamètre (mm)", "diametre_mm"),
+    "longueur": ("Longueur (mm)", "longueur_mm"),
+    "largeur": ("Largeur (mm)", "largeur_mm"),
+    "quantite": ("Quantité", "quantite"),
+    "angle": ("Angle (°)", "angle"),
+    "sens": ("Sens", "sens"),
+    "rayon_interieur": ("Rayon intérieur (mm)", "rayon_mm"),
+    "rayon": ("Rayon (mm)", "rayon_mm"),
+    "cote1": ("Cote 1 (mm)", "cote1_mm"),
+    "cote2": ("Cote 2 (mm)", "cote2_mm"),
+    "gorge": ("Gorge (mm)", "gorge_mm"),
+    "designation": ("Désignation", "designation"),
+    "type": ("Type", "type"),
+    "filetage": ("Filetage", "filetage"),
+    "norme": ("Norme", "norme"),
+    "tolerance": ("Tolérance", "tolerance"),
+    "tolerance_geometrique": ("Tolérance géométrique", "tolerance_geometrique"),
+    "fraisurage": ("Fraisurage", "fraisurage"),
+    "procede": ("Procédé", "procede"),
+    "type_joint": ("Type de joint", "type_joint"),
+    "texte": ("Annotation", "texte"),
+}
+
+CHAMPS_MASQUES: frozenset[str] = frozenset({"confiance", "source"})
+"""Traces d'extraction, jamais affichées dans l'avant/après."""
+
+
+def _formater(cle_format: str, valeur: Any) -> str:
+    """``formater_valeur`` + littéraux à underscores lisibles
+    (« ecrou_a_sertir » → « ecrou a sertir »)."""
+    texte = formater_valeur(cle_format, valeur)
+    return texte.replace("_", " ") if isinstance(valeur, str) else texte
+
+
+def _libelle_element(nom_liste: str, index: int, element: Any) -> str:
+    """« Composant « CRIMPING NUTS… » », « Trou 2 », « Profil, élément 2 (pli) ».
+
+    Position affichée = index + 1 ; un composant est désigné par sa désignation
+    (repli sur la position si elle est vide).
+    """
+    libelle = LIBELLES_LISTES.get(nom_liste, nom_liste)
+    if nom_liste == "profil_pliage.elements":
+        return f"{libelle}, élément {index + 1} ({getattr(element, 'type', '?')})"
+    designation = getattr(element, "designation", None)
+    if nom_liste == "composants" and isinstance(designation, str) and designation.strip():
+        return f"{libelle} « {designation.strip()} »"
+    return f"{libelle} {index + 1}"
+
+
+def _resume_element(element: BaseModel | dict[str, Any]) -> str:
+    """« Forme : rond, Diamètre (mm) : 8.75, Quantité : 2 ».
+
+    Champs non None, hors ``CHAMPS_MASQUES``, libellés de
+    ``LIBELLES_CHAMPS_ELEMENT`` (repli : nom du champ).
+    """
+    champs = element.model_dump() if isinstance(element, BaseModel) else element
+    morceaux = []
+    for nom, valeur in champs.items():
+        if nom in CHAMPS_MASQUES or valeur is None:
+            continue
+        libelle, cle = LIBELLES_CHAMPS_ELEMENT.get(nom, (str(nom), str(nom)))
+        if isinstance(valeur, dict):
+            texte = f"({_resume_element(valeur)})"
+        elif isinstance(valeur, (list, tuple)):
+            texte = f"{len(valeur)} élément(s)"
+        else:
+            texte = _formater(cle, valeur)
+        morceaux.append(f"{libelle} : {texte}")
+    return ", ".join(morceaux) or "—"
+
+
+def _resume_profil(profil: ProfilPliage) -> str:
+    """« Cotation exterieure, rayon général 2.00 mm : aile 42.00 / pli 90.00° haut »."""
+    entete = f"Cotation {profil.cotation}"
+    if profil.rayon_pliage_general is not None:
+        entete += f", rayon général {_formater('rayon_mm', profil.rayon_pliage_general)} mm"
+    elements = []
+    for element in profil.elements:
+        if isinstance(element, Aile):
+            elements.append(f"aile {_formater('longueur_mm', element.longueur)}")
+        else:
+            texte = f"pli {_formater('angle', element.angle)}° {element.sens}"
+            if element.rayon_interieur is not None:
+                texte += f" R {_formater('rayon_mm', element.rayon_interieur)}"
+            elements.append(texte)
+    return f"{entete} : {' / '.join(elements)}"
+
+
+def _ligne_repli(diff: DiffCorrection) -> tuple[str, str, str, str]:
+    """Diff qui échouera à l'application : chemin brut, valeur sans traces.
+
+    Le message d'erreur de ``appliquer`` (affiché par l'écran) fait foi.
+    """
+    valeur = diff.nouvelle_valeur
+    apres = _resume_element(valeur) if isinstance(valeur, dict) else _formater("", valeur)
+    return (diff.chemin or "", "—", apres, diff.justification)
+
+
+def _lignes_diff(piece: PieceExtraite, diff: DiffCorrection) -> list[tuple[str, str, str, str]]:
+    """Lignes lisibles d'un diff ; lève si le diff est inapplicable."""
+    justification = diff.justification
+    if diff.type == "remplacement":
+        libelle, cle = LIBELLES_CHEMINS[diff.chemin or ""]
+        nouvelle = CHEMINS_AUTORISES[diff.chemin or ""](diff.nouvelle_valeur)
+        avant = _lire_chemin(piece, diff.chemin or "")
+        return [(libelle, _formater(cle, avant), _formater(cle, nouvelle), justification)]
+    if diff.type == "creation_section":
+        if diff.chemin != "profil_pliage" or piece.profil_pliage is not None:
+            raise ErreurCorrection(diff.chemin or "")
+        profil = ProfilPliage.model_validate(diff.nouvelle_valeur)
+        return [("Profil de pliage", "— (absent)", _resume_profil(profil), justification)]
+    if diff.type in ("ajout_element", "ajout_composant"):
+        nom_liste = (diff.chemin or "") if diff.type == "ajout_element" else "composants"
+        element = LISTES_ENRICHISSABLES[nom_liste].model_validate(diff.nouvelle_valeur)
+        libelle = f"{LIBELLES_LISTES[nom_liste]} (ajout)"
+        return [(libelle, "—", _resume_element(element), justification)]
+    # modification_element : une ligne par champ qui change.
+    liste, index, modele = _resoudre_element(piece, diff.chemin or "")
+    actuel = liste[index]
+    if not isinstance(diff.nouvelle_valeur, dict) or set(diff.nouvelle_valeur) - set(
+        type(actuel).model_fields
+    ):
+        raise ErreurCorrection(diff.chemin or "")
+    nouveau = TypeAdapter(modele).validate_python({**actuel.model_dump(), **diff.nouvelle_valeur})
+    nom_liste = (diff.chemin or "").rsplit("[", 1)[0]
+    prefixe = _libelle_element(nom_liste, index, actuel)
+    lignes = []
+    for champ in type(nouveau).model_fields:
+        if champ in CHAMPS_MASQUES:
+            continue
+        valeur_avant = getattr(actuel, champ, None)
+        valeur_apres = getattr(nouveau, champ)
+        if valeur_avant == valeur_apres:
+            continue
+        libelle, cle = LIBELLES_CHAMPS_ELEMENT.get(champ, (champ, champ))
+        lignes.append(
+            (
+                f"{prefixe} : {libelle}",
+                _formater(cle, valeur_avant),
+                _formater(cle, valeur_apres),
+                justification,
+            )
+        )
+    return lignes or [(f"{prefixe} : (aucun changement)", "—", "—", justification)]
+
+
 class ErreurCorrection(Exception):
     """Proposition ou application de correction invalide (message lisible)."""
 
@@ -146,28 +320,20 @@ class PropositionCorrection(BaseModel):
         return corrigee
 
     def ligne_avant_apres(self, piece: PieceExtraite) -> list[tuple[str, str, str, str]]:
-        """Lignes d'affichage (champ, avant, après, justification)."""
-        lignes = []
+        """(champ, avant, après, justification) lisibles pour un deviseur.
+
+        Libellés métier, nombres formatés par ``formater_valeur``, jamais de
+        ``confiance``/``source`` ni de repr Pydantic. Un ``modification_element``
+        produit une ligne par champ qui change. Ne lève jamais : un diff
+        inapplicable donne une ligne de repli (le message de ``appliquer``,
+        affiché par l'écran, fait foi).
+        """
+        lignes: list[tuple[str, str, str, str]] = []
         for diff in self.diffs:
-            if diff.type == "remplacement":
-                avant = _lire_chemin(piece, diff.chemin or "")
-                lignes.append(
-                    (diff.chemin or "", str(avant), str(diff.nouvelle_valeur), diff.justification)
-                )
-            elif diff.type == "creation_section":
-                lignes.append(
-                    (diff.chemin or "", "— (absente)", str(diff.nouvelle_valeur), diff.justification)
-                )
-            elif diff.type == "modification_element":
-                try:
-                    liste, index, _ = _resoudre_element(piece, diff.chemin or "")
-                    avant = str(liste[index])
-                except ErreurCorrection:
-                    avant = "—"
-                lignes.append((diff.chemin or "", avant, str(diff.nouvelle_valeur), diff.justification))
-            else:
-                etiquettes = diff.chemin or "composants"
-                lignes.append((etiquettes, "—", str(diff.nouvelle_valeur), diff.justification))
+            try:
+                lignes.extend(_lignes_diff(piece, diff))
+            except (ErreurCorrection, ValidationError, KeyError, TypeError, ValueError):
+                lignes.append(_ligne_repli(diff))
         return lignes
 
 

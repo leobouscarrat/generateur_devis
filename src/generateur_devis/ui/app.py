@@ -273,12 +273,13 @@ def _ecran_assistant(piece: PieceExtraite) -> None:
         st.caption(f"Correction : « {st.session_state.get('texte_en_cours', '')} »")
         if proposition.remarque:
             st.info(f"💬 {proposition.remarque}")
+        lignes = proposition.ligne_avant_apres(piece)
         st.table(
             {
-                "Champ": [c for c, _, _, _ in proposition.ligne_avant_apres(piece)],
-                "Avant": [a for _, a, _, _ in proposition.ligne_avant_apres(piece)],
-                "Après": [b for _, _, b, _ in proposition.ligne_avant_apres(piece)],
-                "Justification": [j for _, _, _, j in proposition.ligne_avant_apres(piece)],
+                "Champ": [c for c, _, _, _ in lignes],
+                "Avant": [a for _, a, _, _ in lignes],
+                "Après": [b for _, _, b, _ in lignes],
+                "Justification": [j for _, _, _, j in lignes],
             }
         )
         try:

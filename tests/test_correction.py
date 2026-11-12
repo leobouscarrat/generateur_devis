@@ -23,12 +23,14 @@ from generateur_devis.schema.piece import (
     Aile,
     Champ,
     CoinCoupe,
+    Composant,
     Contours,
     Encombrement,
     Matiere,
     PieceExtraite,
     Pli,
     ProfilPliage,
+    Source,
     Trou,
 )
 
@@ -70,7 +72,9 @@ def test_ajout_element_trous(monkeypatch):
     })
     proposition = proposer_correction(piece, "il y a 2 trous Ø8.75", "test")
     lignes = proposition.ligne_avant_apres(piece)
-    assert lignes[0][0] == "contours.trous"
+    assert lignes[0][:3] == (
+        "Trou (ajout)", "—", "Forme : rond, Diamètre (mm) : 8.75, Quantité : 2"
+    )
 
     corrigee = proposition.appliquer(piece)
     assert len(corrigee.contours.trous) == 1
@@ -169,8 +173,8 @@ def test_modification_element_avant_apres_affiche_element_actuel():
         nouvelle_valeur={"sens": "bas"}, justification="?",
     )])
     lignes = proposition.ligne_avant_apres(piece_support())
-    assert lignes[0][0] == "profil_pliage.elements[1]"
-    assert "haut" in lignes[0][1]  # l'élément actuel est affiché en « avant »
+    # Seul le champ modifié est affiché, avec la position de l'élément (#67).
+    assert lignes == [("Profil, élément 2 (pli) : Sens", "haut", "bas", "?")]
 
 
 def test_ajout_composant_reste_accepte():
@@ -224,7 +228,9 @@ def test_creation_section_profil_pliage_absent(monkeypatch):
     })
     proposition = proposer_correction(piece, "1 pli à 90° sens haut, rayon 2 mm, cotes extérieures", "test")
     lignes = proposition.ligne_avant_apres(piece)
-    assert lignes[0][1] == "— (absente)"
+    assert lignes[0][:2] == ("Profil de pliage", "— (absent)")
+    assert "aile 42.00" in lignes[0][2]
+    assert "pli 90.00° haut" in lignes[0][2]
 
     corrigee = proposition.appliquer(piece)
     assert corrigee.profil_pliage is not None
@@ -458,4 +464,173 @@ def test_ligne_avant_apres():
         ]
     )
     lignes = proposition.ligne_avant_apres(piece)
-    assert lignes == [("matiere.epaisseur.valeur", "2.0", "3.0", "3 mm")]
+    assert lignes == [("Épaisseur (mm)", "2.00", "3.00", "3 mm")]
+
+
+# --- Avant/après lisible (issue #67) ----------------------------------------
+
+ECROUS = "CRIMPING NUTS M6 1,00 CL8 S2S"
+
+
+def _piece_avec_ecrous() -> PieceExtraite:
+    return piece_support().model_copy(update={"composants": [Composant(
+        designation=ECROUS, type="ecrou_a_sertir", filetage="M6", quantite=2,
+        confiance=0.9, source=Source(page=1, zone=(0.1, 0.2, 0.3, 0.4)),
+    )]})
+
+
+def _cellules_techniques(lignes) -> list[str]:
+    """Cellules contenant un résidu technique (trace, repr Pydantic, dict)."""
+    interdits = ("confiance", "source", "Source(", "{", "[")
+    return [c for ligne in lignes for c in ligne[:3] if any(i in c for i in interdits)]
+
+
+def _modif(chemin, valeur, justification="?"):
+    return PropositionCorrection(diffs=[DiffCorrection(
+        type="modification_element", chemin=chemin,
+        nouvelle_valeur=valeur, justification=justification,
+    )])
+
+
+def test_modification_composant_une_ligne_par_champ_modifie():
+    lignes = _modif("composants[0]", {"quantite": 4}, "4 écrous").ligne_avant_apres(
+        _piece_avec_ecrous()
+    )
+    assert lignes == [(f"Composant « {ECROUS} » : Quantité", "2", "4", "4 écrous")]
+    assert _cellules_techniques(lignes) == []
+
+
+def test_modification_trou_oblong_vers_rond():
+    piece = piece_support().model_copy(update={"contours": Contours(
+        trous=[Trou(forme="oblong", longueur=12.0, largeur=8.75, quantite=2)]
+    )})
+    lignes = _modif(
+        "contours.trous[0]", {"forme": "rond", "diametre": 8.75, "longueur": None, "largeur": None}
+    ).ligne_avant_apres(piece)
+    assert lignes == [
+        ("Trou 1 : Forme", "oblong", "rond", "?"),
+        ("Trou 1 : Diamètre (mm)", "—", "8.75", "?"),
+        ("Trou 1 : Longueur (mm)", "12.00", "—", "?"),
+        ("Trou 1 : Largeur (mm)", "8.75", "—", "?"),
+    ]
+
+
+def test_modification_aile_vers_pli_refusee_ligne_de_repli_lisible():
+    """Changer le type d'un élément du profil est refusé par appliquer (angle et
+    sens inconnus d'une Aile) : l'avant/après le montre en ligne de repli
+    lisible, cohérente avec le st.error de l'écran."""
+    proposition = _modif(
+        "profil_pliage.elements[2]", {"type": "pli", "angle": 90.0, "sens": "bas"}
+    )
+    lignes = proposition.ligne_avant_apres(piece_support())
+    assert lignes == [(
+        "profil_pliage.elements[2]", "—", "Type : pli, Angle (°) : 90.00, Sens : bas", "?"
+    )]
+    with pytest.raises(ErreurCorrection, match="inconnu"):
+        proposition.appliquer(piece_support())
+
+
+def test_modification_sans_changement_reel():
+    lignes = _modif("contours.trous[0]", {"quantite": 2}).ligne_avant_apres(piece_support())
+    assert lignes == [("Trou 1 : (aucun changement)", "—", "—", "?")]
+
+
+def test_composant_sans_designation_libelle_par_position():
+    piece = _piece_avec_ecrous().model_copy(update={"composants": [
+        Composant(designation="  ", type="rivet", quantite=1)
+    ]})
+    lignes = _modif("composants[0]", {"quantite": 3}).ligne_avant_apres(piece)
+    assert lignes[0][0] == "Composant 1 : Quantité"
+
+
+def test_ajout_composant_resume_lisible_sans_underscore():
+    proposition = PropositionCorrection(diffs=[DiffCorrection(
+        type="ajout_composant", chemin=None,
+        nouvelle_valeur={"designation": "Écrou M6", "type": "ecrou_a_sertir",
+                         "filetage": "M6", "quantite": 4, "confiance": 0.8},
+        justification="4 écrous",
+    )])
+    lignes = proposition.ligne_avant_apres(piece_support())
+    assert lignes == [(
+        "Composant (ajout)", "—",
+        "Désignation : Écrou M6, Type : ecrou a sertir, Filetage : M6, Quantité : 4",
+        "4 écrous",
+    )]
+
+
+def test_creation_section_resume_complet():
+    piece = piece_support().model_copy(update={"profil_pliage": None})
+    proposition = PropositionCorrection(diffs=[DiffCorrection(
+        type="creation_section", chemin="profil_pliage", nouvelle_valeur=PROFIL_A_CREER,
+    )])
+    assert proposition.ligne_avant_apres(piece) == [(
+        "Profil de pliage", "— (absent)",
+        "Cotation exterieure, rayon général 2.00 mm : aile 42.00 / pli 90.00° haut / aile 22.00",
+        "",
+    )]
+
+
+@pytest.mark.parametrize("diff", [
+    DiffCorrection(type="modification_element", chemin="composants[5]",
+                   nouvelle_valeur={"quantite": 4, "confiance": 0.9}),
+    DiffCorrection(type="modification_element", chemin="contours.trous[0]",
+                   nouvelle_valeur={"couleur": "rouge", "source": {"page": 1}}),
+    DiffCorrection(type="modification_element", chemin="contours.trous[0]",
+                   nouvelle_valeur={"quantite": 0}),
+    DiffCorrection(type="modification_element", chemin="contours.trous[0]",
+                   nouvelle_valeur="rond"),
+    DiffCorrection(type="remplacement", chemin="identification.reference.valeur",
+                   nouvelle_valeur="X"),
+    DiffCorrection(type="remplacement", chemin="matiere.epaisseur.valeur",
+                   nouvelle_valeur="épais"),
+    DiffCorrection(type="ajout_element", chemin="contours.trous",
+                   nouvelle_valeur={"forme": "triangle", "confiance": 0.5}),
+    DiffCorrection(type="ajout_element", chemin="notes", nouvelle_valeur={"texte": "x"}),
+    DiffCorrection(type="creation_section", chemin="profil_pliage",
+                   nouvelle_valeur={"elements": [{"type": "pli", "angle": 0}]}),
+])
+def test_diff_inapplicable_ligne_de_repli_sans_exception(diff):
+    piece = piece_support().model_copy(update={"profil_pliage": None})
+    lignes = PropositionCorrection(diffs=[diff]).ligne_avant_apres(piece)
+    assert len(lignes) == 1
+    assert lignes[0][0] == diff.chemin
+    assert lignes[0][1] == "—"
+    assert "confiance" not in lignes[0][2] and "source" not in lignes[0][2]
+    assert "{" not in lignes[0][2]
+    # Le diff reste bien refusé à l'application (le st.error fait foi).
+    with pytest.raises(ErreurCorrection):
+        PropositionCorrection(diffs=[diff]).appliquer(piece)
+
+
+def test_garde_fou_libelles_chemins_couvrent_la_whitelist():
+    from generateur_devis.extraction.correction import CHEMINS_AUTORISES, LIBELLES_CHEMINS
+
+    assert set(LIBELLES_CHEMINS) == set(CHEMINS_AUTORISES)
+
+
+def test_garde_fou_libelles_listes_couvrent_les_listes_modifiables():
+    from generateur_devis.extraction.correction import ELEMENTS_MODIFIABLES, LIBELLES_LISTES
+
+    assert set(LIBELLES_LISTES) == set(ELEMENTS_MODIFIABLES)
+
+
+def test_garde_fou_libelles_champs_couvrent_les_modeles_d_elements():
+    """Tout champ d'un élément modifiable (Aile et Pli inclus) a un libellé."""
+    from typing import get_args
+
+    from generateur_devis.extraction.correction import (
+        CHAMPS_MASQUES,
+        ELEMENTS_MODIFIABLES,
+        LIBELLES_CHAMPS_ELEMENT,
+    )
+
+    modeles = []
+    for modele in ELEMENTS_MODIFIABLES.values():
+        if isinstance(modele, type):
+            modeles.append(modele)
+        else:  # union discriminée Annotated[Aile | Pli, ...]
+            modeles.extend(get_args(get_args(modele)[0]))
+    assert {m.__name__ for m in modeles} >= {"Aile", "Pli", "Trou", "Composant"}
+    for modele in modeles:
+        manquants = set(modele.model_fields) - CHAMPS_MASQUES - set(LIBELLES_CHAMPS_ELEMENT)
+        assert not manquants, (modele.__name__, manquants)
