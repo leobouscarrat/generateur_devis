@@ -588,6 +588,14 @@ def test_creation_section_resume_complet():
     DiffCorrection(type="ajout_element", chemin="notes", nouvelle_valeur={"texte": "x"}),
     DiffCorrection(type="creation_section", chemin="profil_pliage",
                    nouvelle_valeur={"elements": [{"type": "pli", "angle": 0}]}),
+    # Revue #80 : liste d'éléments au lieu d'un objet, entier démesuré.
+    DiffCorrection(type="ajout_element", chemin="contours.trous",
+                   nouvelle_valeur=[{"forme": "rond", "diametre": 8, "confiance": 0.9,
+                                     "source": {"page": 1}}]),
+    DiffCorrection(type="modification_element", chemin="composants[0]",
+                   nouvelle_valeur=[{"quantite": 4, "confiance": 1}]),
+    DiffCorrection(type="modification_element", chemin="contours.trous[0]",
+                   nouvelle_valeur={"diametre": 10**400}),
 ])
 def test_diff_inapplicable_ligne_de_repli_sans_exception(diff):
     piece = piece_support().model_copy(update={"profil_pliage": None})
@@ -596,7 +604,7 @@ def test_diff_inapplicable_ligne_de_repli_sans_exception(diff):
     assert lignes[0][0] == diff.chemin
     assert lignes[0][1] == "—"
     assert "confiance" not in lignes[0][2] and "source" not in lignes[0][2]
-    assert "{" not in lignes[0][2]
+    assert "{" not in lignes[0][2] and "[" not in lignes[0][2]
     # Le diff reste bien refusé à l'application (le st.error fait foi).
     with pytest.raises(ErreurCorrection):
         PropositionCorrection(diffs=[diff]).appliquer(piece)

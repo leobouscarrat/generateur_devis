@@ -150,7 +150,10 @@ CHAMPS_MASQUES: frozenset[str] = frozenset({"confiance", "source"})
 def _formater(cle_format: str, valeur: Any) -> str:
     """``formater_valeur`` + littéraux à underscores lisibles
     (« ecrou_a_sertir » → « ecrou a sertir »)."""
-    texte = formater_valeur(cle_format, valeur)
+    try:
+        texte = formater_valeur(cle_format, valeur)
+    except (OverflowError, ValueError):  # entier démesuré proposé par l'IA
+        return "valeur hors limites"
     return texte.replace("_", " ") if isinstance(valeur, str) else texte
 
 
@@ -213,9 +216,16 @@ def _ligne_repli(diff: DiffCorrection) -> tuple[str, str, str, str]:
 
     Le message d'erreur de ``appliquer`` (affiché par l'écran) fait foi.
     """
-    valeur = diff.nouvelle_valeur
-    apres = _resume_element(valeur) if isinstance(valeur, dict) else _formater("", valeur)
-    return (diff.chemin or "", "—", apres, diff.justification)
+    return (diff.chemin or "", "—", _resume_valeur(diff.nouvelle_valeur), diff.justification)
+
+
+def _resume_valeur(valeur: Any) -> str:
+    """Valeur brute proposée par l'IA (dict, liste ou scalaire), sans repr Python."""
+    if isinstance(valeur, dict):
+        return _resume_element(valeur)
+    if isinstance(valeur, (list, tuple)):
+        return " ; ".join(_resume_valeur(v) for v in valeur) or "—"
+    return _formater("", valeur)
 
 
 def _lignes_diff(piece: PieceExtraite, diff: DiffCorrection) -> list[tuple[str, str, str, str]]:
@@ -332,7 +342,14 @@ class PropositionCorrection(BaseModel):
         for diff in self.diffs:
             try:
                 lignes.extend(_lignes_diff(piece, diff))
-            except (ErreurCorrection, ValidationError, KeyError, TypeError, ValueError):
+            except (
+                ErreurCorrection,
+                ValidationError,
+                KeyError,
+                TypeError,
+                ValueError,
+                OverflowError,
+            ):
                 lignes.append(_ligne_repli(diff))
         return lignes
 
