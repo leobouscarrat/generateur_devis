@@ -33,8 +33,10 @@ from generateur_devis.ui.app import (
     CLE_PROPOSITION,
     CLE_RESULTAT,
     CLES_VALIDATION,
+    MatiereInitiale,
     ValeurInitiale,
     _valider_lignes,
+    matiere_initiale,
     revenir_au_depot,
     valeur_initiale,
 )
@@ -347,3 +349,112 @@ def test_cles_validation_couvrent_etat_et_editeurs():
         "editeur_profil",
         "editeur_trous",
     }
+
+
+# --- Matière pré-sélectionnée (issue #55) ------------------------------------
+
+# 304L en premier : piège un repli sur l'index 0 de la liste.
+IDS_MATIERES = ["304L", "316L", "S235JR"]
+
+
+def test_matiere_initiale_depot_sans_designation():
+    m = matiere_initiale("S235JR", None, IDS_MATIERES)
+    assert (m.matiere_id, m.origine, m.alerte) == ("S235JR", "depot", None)
+    assert m.explication == "Matière : choisie au dépôt (absente du plan)."
+
+
+def test_matiere_initiale_depot_identique_au_plan():
+    m = matiere_initiale("S235JR", "S235JR", IDS_MATIERES)
+    assert (m.matiere_id, m.origine, m.alerte) == ("S235JR", "depot", None)
+    assert m.explication == "Matière : choisie au dépôt, identique au plan."
+
+
+def test_matiere_initiale_conflit_depot_plan_alerte():
+    m = matiere_initiale("S235JR", "304L", IDS_MATIERES)
+    assert (m.matiere_id, m.origine) == ("S235JR", "depot")
+    assert m.explication == "Matière : choisie au dépôt."
+    assert m.alerte == "⚠️ Matière : choix du dépôt S235JR retenu, le plan indique « 304L »."
+
+
+def test_matiere_initiale_conflit_depot_correction_assistant():
+    m = matiere_initiale("S235JR", "316L", IDS_MATIERES, corrigee=True)
+    assert m.matiere_id == "S235JR"
+    assert m.alerte == (
+        "⚠️ Matière : choix du dépôt S235JR retenu, la correction de l'assistant indique « 316L »."
+    )
+
+
+def test_matiere_initiale_plan_connu():
+    m = matiere_initiale(None, "S235JR", IDS_MATIERES)
+    assert (m.matiere_id, m.origine, m.alerte) == ("S235JR", "plan", None)
+    assert m.explication == "Matière : lue sur le plan."
+
+
+def test_matiere_initiale_corrigee_par_assistant():
+    m = matiere_initiale(None, "S235JR", IDS_MATIERES, corrigee=True)
+    assert (m.matiere_id, m.origine) == ("S235JR", "assistant")
+    assert m.explication == "Matière : corrigée par l'assistant."
+
+
+def test_matiere_initiale_designation_inconnue_aucune_preselection():
+    m = matiere_initiale(None, "16 GAUGE A36 STEEL", IDS_MATIERES)
+    assert (m.matiere_id, m.origine) == (None, "inconnue")
+    assert m.explication == (
+        "Matière : « 16 GAUGE A36 STEEL » lue sur le plan, inconnue du référentiel : à choisir."
+    )
+
+
+def test_matiere_initiale_casse_differente_inconnue():
+    m = matiere_initiale(None, "s235jr", IDS_MATIERES)
+    assert (m.matiere_id, m.origine) == (None, "inconnue")
+
+
+@pytest.mark.parametrize("designation", [None, "", "  "])
+def test_matiere_initiale_absente(designation):
+    m = matiere_initiale(None, designation, IDS_MATIERES)
+    assert (m.matiere_id, m.origine) == (None, "absente")
+    assert m.explication == "Matière : absente du plan et non choisie au dépôt : à choisir."
+
+
+def test_matiere_initiale_designation_avec_espaces_reconnue():
+    m = matiere_initiale(None, " S235JR ", IDS_MATIERES)
+    assert (m.matiere_id, m.origine) == ("S235JR", "plan")
+
+
+def test_matiere_initiale_depot_inconnu_ignore():
+    m = matiere_initiale("X", "S235JR", IDS_MATIERES)
+    assert (m.matiere_id, m.origine, m.alerte) == ("S235JR", "plan", None)
+    assert m.explication.startswith("Choix du dépôt « X » inconnu du référentiel ; ")
+    assert m.explication.endswith("Matière : lue sur le plan.")
+
+
+def test_matiere_initiale_depot_inconnu_sans_designation():
+    m = matiere_initiale("X", None, IDS_MATIERES)
+    assert (m.matiere_id, m.origine) == (None, "absente")
+    assert "« X »" in m.explication
+
+
+@pytest.mark.parametrize(
+    ("depot", "designation", "corrigee"),
+    [
+        ("S235JR", None, False),
+        ("S235JR", "304L", False),
+        ("S235JR", "S235JR", False),
+        (None, "S235JR", False),
+        (None, "S235JR", True),
+        (None, "16 GAUGE A36 STEEL", False),
+        (None, None, False),
+        (None, "", False),
+        (None, "  ", False),
+        ("X", "S235JR", False),
+        ("X", None, False),
+        ("316L", "inconnue", True),
+    ],
+)
+def test_matiere_initiale_invariants(depot, designation, corrigee):
+    m = matiere_initiale(depot, designation, IDS_MATIERES, corrigee=corrigee)
+    assert isinstance(m, MatiereInitiale)
+    assert m.explication.strip()
+    assert m.matiere_id is None or m.matiere_id in IDS_MATIERES
+    if "304L" not in (depot, designation):
+        assert m.matiere_id != "304L"
