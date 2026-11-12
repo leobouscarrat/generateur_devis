@@ -306,3 +306,20 @@ def test_rechiffrer_sans_composants_inchange(session):
     resultat = rechiffrer(piece_support(MATIERE), MATIERE, None, None, session)
     palier_100 = next(p for p in resultat.chiffrage.paliers if p.quantite == 100)
     assert palier_100.cout_unitaire_eur == pytest.approx(1.25, abs=0.03)
+
+
+@pytest.mark.parametrize(("contenu", "nom"), [(b"", "vide.pdf"), (b"hello world", "faux.pdf")])
+def test_pipeline_fichier_illisible_sans_appel_modele(monkeypatch, session, contenu, nom):
+    """Issue #63 : vrai ``charger_plan`` ; le modèle ne doit jamais être sollicité."""
+
+    def interdit(*args, **kwargs):
+        raise AssertionError("modèle appelé")
+
+    monkeypatch.setattr(pipeline, "extraire", interdit)
+    monkeypatch.setattr(pipeline, "creer_modele", interdit)
+
+    resultat = orchestrer_devis(contenu, nom, None, None, None, "test:m", session)
+
+    assert resultat.erreur == "Fichier illisible ou vide : déposez un PDF ou une image de plan."
+    assert resultat.piece is None
+    assert "/" not in resultat.erreur and "tmp" not in resultat.erreur

@@ -28,6 +28,7 @@ PRECISION_PAR_SUFFIXE: dict[str, int] = {
     "_s": 2,
     "_min": 2,
     # Entiers naturels : quantités, opérateurs, délais.
+    "quantite": 0,
     "qte_min": 0,
     "nb_operateurs": 0,
     "delai_jours": 0,
