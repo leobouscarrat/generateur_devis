@@ -802,6 +802,9 @@ _TRAITEMENTS: list[Traitement] = [
 
 _PARAMETRES_DEFAUT: dict[str, Any] = {
     "marge_defaut": "0.25",
+    # Borne haute métier de toute marge (devis, marge_defaut, marges clients) :
+    # au-delà, refus ⛔ (une faute de frappe 0,99 multiplie le prix par 100).
+    "marge_max": "0.6",
     "seuil_confiance_champs": "0.7",
     "rendement_calepinage": "0.80",
     "facteur_k": "0.40",

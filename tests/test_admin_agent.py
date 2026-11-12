@@ -29,6 +29,7 @@ from generateur_devis.data.tables import (
     Client,
     Matiere,
     ModificationReferentiel,
+    Parametre,
     Traitement,
 )
 from generateur_devis.extraction.prompt import (
@@ -339,7 +340,7 @@ def test_proposition_multi_lignes_une_marge_invalide_refusee(monkeypatch, sessio
     assert session.get(Matiere, "S235JR").prix_eur_kg == pytest.approx(1.10)
 
 
-@pytest.mark.parametrize("valeur", ["0", "0.999"])
+@pytest.mark.parametrize("valeur", ["0", "0.6"])
 def test_marge_defaut_aux_bornes_acceptee(monkeypatch, session, valeur):
     _bouchon_modele(monkeypatch, _maj("parametres", "marge_defaut", "valeur", valeur))
     proposition = proposer_modifications("marge par défaut", "test:admin", session)
@@ -393,6 +394,7 @@ def test_prompt_admin_enonce_la_borne_des_marges():
     assert "marge_specifique" in prompt
     assert "marge_defaut" in prompt
     assert "0 ≤ marge < 1" in prompt
+    assert "marge_max" in prompt
 
 
 # --- Index des référentiels fourni à l'agent (issue #77) ----------------------
@@ -546,3 +548,72 @@ def test_prompt_admin_enonce_le_format_du_modele():
     assert "fournisseur:modèle" in prompt
     for fournisseur in FOURNISSEURS:
         assert fournisseur in prompt
+
+
+# --- Borne haute métier marge_max (issue #102) ---------------------------------
+
+
+@pytest.mark.parametrize("valeur", ["0.7", "0.999", "0.601"])
+def test_marge_defaut_au_dessus_de_marge_max_refusee(monkeypatch, session, valeur):
+    _bouchon_modele(monkeypatch, _maj("parametres", "marge_defaut", "valeur", valeur))
+    with pytest.raises(ErreurAdmin, match="Marge invalide") as exc:
+        proposer_modifications("marge par défaut", "test:admin", session)
+    assert "hors de la plage 0 – 60 %" in str(exc.value)
+    assert get_parametre("marge_defaut", session) == 0.25
+
+
+def test_marge_client_au_dessus_de_marge_max_refusee_a_l_application(session):
+    proposition = PropositionAdmin(modifications=[ModificationAdmin(
+        type="mise_a_jour", table="clients", ligne_id="CLI001",
+        champ="marge_specifique", valeur=0.65, justification="test",
+    )])
+    with pytest.raises(ErreurAdmin, match="hors de la plage 0 – 60 %"):
+        proposition.appliquer("direction", session)
+    assert session.get(Client, "CLI001").marge_specifique == 0.18
+    assert historique(session) == []
+
+
+def test_marge_client_suit_marge_max_administree(monkeypatch, session):
+    """marge_max relevé à 0.7 en base : une marge client de 0.65 passe."""
+    session.get(Parametre, "marge_max").valeur = "0.7"
+    session.commit()
+    _bouchon_modele(monkeypatch, _maj("clients", "CLI001", "marge_specifique", 0.65))
+    proposition = proposer_modifications("marge CLI001 à 65 %", "test:admin", session)
+    assert proposition.appliquer("direction", session) == 1
+
+
+def test_marge_max_administrable(monkeypatch, session):
+    _bouchon_modele(monkeypatch, _maj("parametres", "marge_max", "valeur", "0.5"))
+    proposition = proposer_modifications("plafond de marge à 50 %", "test:admin", session)
+    proposition.appliquer("direction", session)
+    session.commit()
+    assert get_parametre("marge_max", session) == 0.5
+
+
+@pytest.mark.parametrize("valeur", ["0", "1", "1.5", "-0.1", "abc", "nan", "60 %"])
+def test_marge_max_hors_bornes_refusee(monkeypatch, session, valeur):
+    _bouchon_modele(monkeypatch, _maj("parametres", "marge_max", "valeur", valeur))
+    with pytest.raises(ErreurAdmin, match="Marge maximale invalide"):
+        proposer_modifications("plafond de marge", "test:admin", session)
+    assert get_parametre("marge_max", session) == 0.6
+
+
+def test_marge_max_sous_marge_defaut_refusee(monkeypatch, session):
+    _bouchon_modele(monkeypatch, _maj("parametres", "marge_max", "valeur", "0.2"))
+    with pytest.raises(ErreurAdmin, match="Marge maximale invalide") as exc:
+        proposer_modifications("plafond de marge à 20 %", "test:admin", session)
+    assert "marge_defaut (25 %)" in str(exc.value)
+    assert get_parametre("marge_max", session) == 0.6
+
+
+def test_marge_max_revalide_a_l_application(session):
+    proposition = PropositionAdmin(modifications=[ModificationAdmin(
+        type="mise_a_jour", table="parametres", ligne_id="marge_max",
+        champ="valeur", valeur="0.3", justification="test",
+    )])
+    # La base change entre la proposition et l'acceptation.
+    session.get(Parametre, "marge_defaut").valeur = "0.35"
+    session.commit()
+    with pytest.raises(ErreurAdmin, match="Marge maximale invalide"):
+        proposition.appliquer("direction", session)
+    assert get_parametre("marge_max", session) == 0.6

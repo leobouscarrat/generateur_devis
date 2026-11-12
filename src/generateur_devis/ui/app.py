@@ -35,7 +35,16 @@ from generateur_devis.data.acces import (
     list_matieres,
 )
 from generateur_devis.data.db import get_session
-from generateur_devis.devis import Devis, ErreurDevis, Modification, emettre
+from generateur_devis.devis import (
+    Devis,
+    ErreurDevis,
+    Modification,
+    emettre,
+    formater_marge,
+    marge_en_pourcentage,
+    pourcentage_en_marge,
+    verifier_marge,
+)
 from generateur_devis.extraction import ResultatExtraction
 from generateur_devis.extraction.correction import (
     ErreurCorrection,
@@ -65,6 +74,9 @@ CLE_CONTEXTE = "contexte"
 CLE_PIECE_CORRIGEE = "piece_corrigee"
 CLE_PROPOSITION = "proposition_correction"
 CLE_CORRECTIONS = "corrections_ia"
+# Refus de la dernière marge saisie (affiché une fois, cf. _appliquer_marge).
+CLE_MESSAGE_MARGE = "message_marge"
+AVERTISSEMENT_MARGE_NULLE = "Marge 0 % : vente au prix de revient."
 
 # Garde-fous d'UI des champs bornés : une seule source pour ``min_value=`` et
 # pour la détection des valeurs initiales hors bornes (issue #58).
@@ -375,6 +387,33 @@ def _champs_peu_surs(piece: PieceExtraite, session) -> list[str]:
     ]
 
 
+def _cle_marge(devis: Devis) -> str:
+    """Clé du champ marge (en %), propre au devis : un nouveau devis repart de sa marge."""
+    return f"marge_pct_{devis.id}"
+
+
+def _appliquer_marge() -> None:
+    """Callback de « Appliquer la marge » : exécuté AVANT le rerun (issue #102).
+
+    À ce moment la clé du widget est encore modifiable : après un refus, le
+    champ est remis à la marge en vigueur et le motif est gardé en
+    session_state pour être affiché une fois. Saisie identique à la marge
+    affichée (comparée en %, même arrondi) : rien n'est journalisé.
+    """
+    devis: Devis = st.session_state[CLE_DEVIS]
+    cle = _cle_marge(devis)
+    pourcentage = st.session_state[cle]
+    if pourcentage == marge_en_pourcentage(devis.marge):
+        return
+    with get_session() as session:
+        marge_max = float(get_parametre("marge_max", session))
+    try:
+        devis.changer_marge(devis.auteur or "inconnu", pourcentage_en_marge(pourcentage), marge_max)
+    except ErreurDevis as e:
+        st.session_state[CLE_MESSAGE_MARGE] = str(e)
+        st.session_state[cle] = marge_en_pourcentage(devis.marge)
+
+
 def _ecran_restitution() -> None:
     """Écran 3 : restitution — vue interne / vue client, marge, émission (4.5).
 
@@ -431,23 +470,30 @@ def _ecran_restitution() -> None:
     )
 
     # --- Marge (modifiable jusqu'à l'émission, rechiffrée depuis coûts figés) ---
+    # Saisie en % (stockage en fraction). Règle unique verifier_marge (#102) :
+    # 0 ≤ marge ≤ marge_max (paramètre administré).
+    refus_en_vigueur = None
     if not lecture_seule:
+        with get_session() as session_marge:
+            marge_max = float(get_parametre("marge_max", session_marge))
+        # Marge posée à la validation (client ou marge_defaut) : hors plage si
+        # la base est incohérente → ⛔ et émission désactivée, corrigeable ici.
+        refus_en_vigueur = verifier_marge(devis.marge, marge_max)
+        cle_marge = _cle_marge(devis)
+        if cle_marge not in st.session_state:
+            st.session_state[cle_marge] = marge_en_pourcentage(devis.marge)
         with st.form("marge"):
-            # Pas de min_value/max_value : la marge administrée n'est pas bornée
-            # et la planterait ; la seule règle est Devis.changer_marge (#62).
-            marge = st.number_input(
-                "Marge",
-                value=float(devis.marge),
-                step=0.01,
-                format="%.2f",
-            )
-            if st.form_submit_button("Appliquer la marge") and marge != devis.marge:
-                try:
-                    devis.changer_marge(devis.auteur or "inconnu", marge)
-                except ErreurDevis as e:
-                    st.error(f"⛔ {e}")
-                else:
-                    st.rerun()
+            # Pas de min_value/max_value : une marge administrée hors bornes
+            # planterait le widget (#62) ; le refus vient de verifier_marge.
+            st.number_input("Marge (%)", key=cle_marge, step=1.0, format="%.1f")
+            st.form_submit_button("Appliquer la marge", on_click=_appliquer_marge)
+        message_marge = st.session_state.pop(CLE_MESSAGE_MARGE, None)
+        if message_marge:
+            st.error(f"⛔ {message_marge}")
+        if refus_en_vigueur:
+            st.error(f"⛔ {refus_en_vigueur} Corrigez la marge pour pouvoir émettre le devis.")
+        if devis.marge == 0:
+            st.warning(f"⚠️ {AVERTISSEMENT_MARGE_NULLE}")
 
     # --- Vue interne : alertes (contrôles prix, comparaison historique) ----------
     # Recalculées depuis le Devis (pièce, flan, matière validés, marge courante),
@@ -464,7 +510,7 @@ def _ecran_restitution() -> None:
         st.write(
             f"Coût palier commandé ({devis.quantite_commandee}) : "
             f"**{formater_valeur('cout_unitaire_eur', devis.palier_commande().cout_unitaire_eur)} €** "
-            f"— marge {devis.marge:.0%}"
+            f"— marge {formater_marge(devis.marge)}"
         )
         st.dataframe(
             pd.DataFrame(
@@ -479,7 +525,9 @@ def _ecran_restitution() -> None:
 
     # --- Émission : historique + PDF client ---------------------------------------
     if not lecture_seule:
-        if st.button("📤 Émettre le devis", type="primary"):
+        if st.button(
+            "📤 Émettre le devis", type="primary", disabled=refus_en_vigueur is not None
+        ):
             with get_session() as session:
                 emettre(devis, devis.auteur or "inconnu", session)
                 session.commit()
@@ -505,6 +553,7 @@ def _ecran_restitution() -> None:
             CLE_PIECE_CORRIGEE,
             CLE_PROPOSITION,
             CLE_CORRECTIONS,
+            CLE_MESSAGE_MARGE,
             "pdf_client",
         ):
             st.session_state.pop(cle, None)

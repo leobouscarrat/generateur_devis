@@ -292,6 +292,7 @@ Paramètres globaux du calcul. Ce sont les « boutons » que la direction ou le 
 | cle | valeur | unite | description |
 |---|---|---|---|
 | `marge_defaut` | 0,25 | taux | Taux de marge appliqué au coût (prix = coût ÷ (1 − marge)) |
+| `marge_max` | 0,6 | taux | Marge maximale acceptée (devis, `marge_defaut`, marges clients) ; au-delà, refus |
 | `rendement_calepinage` | 0,80 | taux | Part utile de la tôle |
 | `facteur_k` | 0,40 | — | Position de la fibre neutre, pour le développé |
 | `frais_structure_pct` | 0 | % | Frais additionnels si non inclus dans les taux |

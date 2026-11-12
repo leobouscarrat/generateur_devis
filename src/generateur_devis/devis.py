@@ -29,13 +29,44 @@ StatutDevis = Literal["brouillon", "valide", "emis"]
 
 
 def marge_valide(marge: float) -> bool:
-    """Une marge est une fraction de prix : 0 (incluse) ≤ marge < 1 (exclue).
+    """Garde mathématique : 0 (incluse) ≤ marge < 1 (exclue).
 
-    Seul endroit où la borne est écrite (``Devis.changer_marge``, agent admin).
     À 1, prix = coût ÷ (1 − marge) divise par zéro ; au-delà, prix négatif.
-    NaN et ±inf sont refusés (les comparaisons sont fausses).
+    NaN et ±inf sont refusés (les comparaisons sont fausses). La règle métier
+    complète (borne haute administrée) est `verifier_marge`.
     """
     return 0 <= marge < 1
+
+
+def verifier_marge(marge: float, marge_max: float) -> str | None:
+    """Règle unique d'une marge (issue #102) : None si acceptable, sinon le motif.
+
+    Acceptable ⇔ 0 ≤ marge ≤ ``marge_max`` (paramètre administré, borne
+    incluse) et `marge_valide` (garde mathématique, même si ``marge_max`` ≥ 1
+    a été mal administré). Utilisée par `Devis.changer_marge`, l'écran de
+    restitution (marge en vigueur) et l'agent admin.
+    """
+    if marge_valide(marge) and marge <= marge_max:
+        return None
+    return (
+        f"Marge refusée : {formater_marge(marge)} hors de la plage 0 – {formater_marge(marge_max)}."
+    )
+
+
+def marge_en_pourcentage(marge: float) -> float:
+    """Fraction → pourcentage saisi/affiché (1 décimale) : 0.25 → 25.0, 0.999 → 99.9."""
+    return round(marge * 100, 1)
+
+
+def pourcentage_en_marge(pourcentage: float) -> float:
+    """Pourcentage saisi → fraction stockée : 25.0 → 0.25."""
+    return pourcentage / 100
+
+
+def formater_marge(marge: float) -> str:
+    """Fraction → texte en %, 1 décimale au plus, virgule : 0.999 → « 99,9 % »."""
+    texte = f"{marge_en_pourcentage(marge):.1f}".removesuffix(".0").replace(".", ",")
+    return f"{texte} %"
 
 
 class ErreurDevis(Exception):
@@ -126,16 +157,19 @@ class Devis(BaseModel):
         self._journaliser(auteur, "statut", self.statut, "valide")
         self.statut = "valide"
 
-    def changer_marge(self, auteur: str, marge: float) -> None:
+    def changer_marge(self, auteur: str, marge: float, marge_max: float) -> None:
         """Modifie la marge et rechiffre les prix depuis les coûts figés.
 
         Les coûts ne changent pas ; seuls les prix unitaires sont
         recalculés (`prix = coût ÷ (1 − marge)`) — sans relecture des
-        tables de référence.
+        tables de référence. ``marge_max`` : paramètre administré, lu par
+        l'appelant (le devis n'a pas de session). Refus (`verifier_marge`) :
+        ErreurDevis avec la plage et la marge appliquée, devis inchangé.
         """
         self._verrouiller_si_emis()
-        if not marge_valide(marge):
-            msg = f"Marge invalide : {marge}."
+        motif = verifier_marge(marge, marge_max)
+        if motif is not None:
+            msg = f"{motif} Marge appliquée : {formater_marge(self.marge)}."
             raise ErreurDevis(msg)
         self._journaliser(auteur, "marge", self.marge, marge)
         self.marge = marge

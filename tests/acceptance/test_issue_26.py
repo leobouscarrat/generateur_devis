@@ -119,4 +119,4 @@ def test_emission_bout_en_bout_et_idempotente(session):
         emettre(devis, "testeur", session)
     # Lecture seule : plus aucune modification possible.
     with pytest.raises(ErreurDevis):
-        devis.changer_marge("testeur", 0.30)
+        devis.changer_marge("testeur", 0.30, 0.6)

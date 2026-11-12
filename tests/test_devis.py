@@ -14,11 +14,20 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from generateur_devis.calcul_prix import calculer_bloc_finition, chiffrer
-from generateur_devis.data.acces import get_matiere
+from generateur_devis.data.acces import get_matiere, get_parametre
 from generateur_devis.data.seed import seed
-from generateur_devis.data.tables import Base
+from generateur_devis.data.tables import Base, Client
 from generateur_devis.data.tables import Matiere as MatiereTable
-from generateur_devis.devis import Devis, ErreurDevis, emettre, marge_valide
+from generateur_devis.devis import (
+    Devis,
+    ErreurDevis,
+    emettre,
+    formater_marge,
+    marge_en_pourcentage,
+    marge_valide,
+    pourcentage_en_marge,
+    verifier_marge,
+)
 from generateur_devis.geometrie import construire_flan
 from generateur_devis.schema.piece import (
     Aile,
@@ -36,6 +45,7 @@ from generateur_devis.ui.pipeline import ResultatDevis, rechiffrer
 
 MATIERE = "S235JR"
 FACTEUR_K = 0.40
+MARGE_MAX = 0.6  # paramètre marge_max seedé (issue #102)
 
 
 def piece_003(largeur: float = 60.0, epaisseur: float = 2.0) -> PieceExtraite:
@@ -141,7 +151,7 @@ def test_figeage_apres_validation(session, devis_003):
 def test_changer_marge_rechiffre_depuis_couts_figes(devis_003):
     """Marge 25 % → 40 % : prix recalculé depuis le coût figé, coût inchangé."""
     cout = devis_003.palier_commande().cout_unitaire_eur
-    devis_003.changer_marge("charge_affaires", 0.40)
+    devis_003.changer_marge("charge_affaires", 0.40, MARGE_MAX)
     assert devis_003.palier_commande().cout_unitaire_eur == cout
     assert devis_003.palier_commande().prix_unitaire_eur == pytest.approx(cout / 0.60, rel=1e-9)
     modif = devis_003.modifications[-1]
@@ -152,8 +162,8 @@ def test_changer_marge_rechiffre_depuis_couts_figes(devis_003):
 
 
 def test_changer_marge_invalide(devis_003):
-    with pytest.raises(ErreurDevis, match="Marge invalide"):
-        devis_003.changer_marge("charge_affaires", 1.5)
+    with pytest.raises(ErreurDevis, match="Marge refusée"):
+        devis_003.changer_marge("charge_affaires", 1.5, MARGE_MAX)
 
 
 @pytest.mark.parametrize(
@@ -176,7 +186,7 @@ def test_marge_valide(marge, attendu):
 
 def test_journal_modifications(devis_003):
     """Validation + changement de marge : chaque action est journalisée."""
-    devis_003.changer_marge("direction", 0.30)
+    devis_003.changer_marge("direction", 0.30, MARGE_MAX)
     champs = [m.champ for m in devis_003.modifications]
     assert champs == ["statut", "marge"]
     assert devis_003.auteur == "direction"
@@ -225,7 +235,7 @@ def test_emission_exige_validation(session, flan_003):
 def test_devis_emis_en_lecture_seule(devis_003, session):
     emettre(devis_003, "charge_affaires", session)
     with pytest.raises(ErreurDevis, match="plus modifiable"):
-        devis_003.changer_marge("charge_affaires", 0.30)
+        devis_003.changer_marge("charge_affaires", 0.30, MARGE_MAX)
     with pytest.raises(ErreurDevis, match="plus modifiable"):
         devis_003.valider("charge_affaires")
     with pytest.raises(ErreurDevis, match="plus modifiable"):
@@ -330,29 +340,98 @@ def test_roundtrip_json_conserve_le_flan(devis_003, flan_003):
 # --- Bornes de la marge : règle unique de Devis.changer_marge (issue #62) -------
 
 
-def test_changer_marge_096_acceptee(devis_003):
-    """0,96 dépasse l'ancienne borne du widget (0,95) mais respecte 0 ≤ marge < 1."""
+def test_changer_marge_a_marge_max_acceptee(devis_003):
+    """Borne haute métier incluse (issue #102) : 60 % → prix = coût ÷ 0,40."""
     cout = devis_003.palier_commande().cout_unitaire_eur
-    devis_003.changer_marge("charge_affaires", 0.96)
-    assert devis_003.marge == 0.96
-    assert devis_003.palier_commande().prix_unitaire_eur == pytest.approx(cout / 0.04, rel=1e-9)
+    devis_003.changer_marge("charge_affaires", 0.6, MARGE_MAX)
+    assert devis_003.marge == 0.6
+    assert devis_003.palier_commande().prix_unitaire_eur == pytest.approx(cout / 0.40, rel=1e-9)
 
 
 def test_changer_marge_zero_acceptee(devis_003):
     """Borne basse incluse : prix = coût."""
     cout = devis_003.palier_commande().cout_unitaire_eur
-    devis_003.changer_marge("charge_affaires", 0.0)
+    devis_003.changer_marge("charge_affaires", 0.0, MARGE_MAX)
     assert devis_003.marge == 0.0
     assert devis_003.palier_commande().prix_unitaire_eur == pytest.approx(cout, rel=1e-9)
 
 
-@pytest.mark.parametrize("marge", [1.0, -0.01])
+@pytest.mark.parametrize("marge", [1.0, -0.01, 0.96, 0.601])
 def test_changer_marge_hors_bornes_sans_effet(devis_003, marge):
     """Marge refusée : ni marge, ni prix, ni journal ne changent."""
     prix = [p.prix_unitaire_eur for p in devis_003.chiffrage.paliers]
     nb_modifications = len(devis_003.modifications)
-    with pytest.raises(ErreurDevis, match="Marge invalide"):
-        devis_003.changer_marge("charge_affaires", marge)
+    with pytest.raises(ErreurDevis, match="Marge refusée"):
+        devis_003.changer_marge("charge_affaires", marge, MARGE_MAX)
     assert devis_003.marge == 0.25
     assert [p.prix_unitaire_eur for p in devis_003.chiffrage.paliers] == prix
     assert len(devis_003.modifications) == nb_modifications
+
+
+# --- Borne haute métier marge_max, affichage en % (issue #102) ----------------
+
+
+@pytest.mark.parametrize(
+    ("marge", "marge_max", "attendu"),
+    [
+        (0.0, 0.6, None),
+        (0.25, 0.6, None),
+        (0.6, 0.6, None),
+        (0.601, 0.6, "Marge refusée : 60,1 % hors de la plage 0 – 60 %."),
+        (0.999, 0.6, "Marge refusée : 99,9 % hors de la plage 0 – 60 %."),
+        (1.5, 0.6, "Marge refusée : 150 % hors de la plage 0 – 60 %."),
+        (-0.01, 0.6, "Marge refusée : -1 % hors de la plage 0 – 60 %."),
+        # marge_max mal administré (≥ 1) : la garde mathématique s'applique.
+        (1.0, 1.2, "Marge refusée : 100 % hors de la plage 0 – 120 %."),
+        (0.9, 1.2, None),
+    ],
+)
+def test_verifier_marge(marge, marge_max, attendu):
+    assert verifier_marge(marge, marge_max) == attendu
+
+
+@pytest.mark.parametrize("marge", [float("nan"), float("inf")])
+def test_verifier_marge_nan_inf_refusees(marge):
+    assert verifier_marge(marge, 0.6) is not None
+
+
+@pytest.mark.parametrize(
+    ("marge", "texte"),
+    [(0.25, "25 %"), (0.0, "0 %"), (0.999, "99,9 %"), (1.5, "150 %"), (0.125, "12,5 %"),
+     (0.18, "18 %"), (-0.01, "-1 %")],
+)
+def test_formater_marge(marge, texte):
+    assert formater_marge(marge) == texte
+
+
+@pytest.mark.parametrize(
+    ("marge", "pourcentage"),
+    [(0.25, 25.0), (0.18, 18.0), (0.999, 99.9), (0.0, 0.0), (0.1234, 12.3)],
+)
+def test_marge_en_pourcentage(marge, pourcentage):
+    assert marge_en_pourcentage(marge) == pourcentage
+
+
+@pytest.mark.parametrize(("pourcentage", "marge"), [(25.0, 0.25), (18.0, 0.18), (0.0, 0.0)])
+def test_pourcentage_en_marge(pourcentage, marge):
+    assert pourcentage_en_marge(pourcentage) == marge
+
+
+def test_changer_marge_message_avec_plage_et_marge_appliquee(devis_003):
+    with pytest.raises(ErreurDevis) as exc:
+        devis_003.changer_marge("charge_affaires", 1.5, MARGE_MAX)
+    assert str(exc.value) == (
+        "Marge refusée : 150 % hors de la plage 0 – 60 %. Marge appliquée : 25 %."
+    )
+
+
+def test_marges_seedees_dans_la_plage(session):
+    """marge_defaut et marges clients seedées restent valides sous marge_max."""
+    marge_max = get_parametre("marge_max", session)
+    assert marge_max == 0.6
+    assert verifier_marge(get_parametre("marge_defaut", session), marge_max) is None
+    marges = [c.marge_specifique for c in session.query(Client).all()]
+    assert sorted(m for m in marges if m is not None) == [0.18, 0.25, 0.30]
+    for marge in marges:
+        if marge is not None:
+            assert verifier_marge(marge, marge_max) is None
