@@ -136,10 +136,21 @@ def test_validation_prix_provisoire_deux_decimales(fabrique):
         # Chaînes formatées à 2 décimales exactement (avant : float → « 54.3600 »).
         assert all(isinstance(v, str) and re.fullmatch(r"\d+\.\d{2}", v) for v in valeurs), valeurs
 
+    # Ventilation des coûts (site frère) : chaînes à 2 décimales aussi.
+    (ventilation,) = [d.value for d in at.dataframe if "Variable (€/pièce)" in d.value.columns]
+    for colonne in ("Variable (€/pièce)", "Fixe (€/lot)"):
+        valeurs = list(ventilation[colonne])
+        assert all(isinstance(v, str) and re.fullmatch(r"\d+\.\d{2}", v) for v in valeurs), valeurs
+
     # Parcours jusqu'au devis : seuls les paliers 1 et 10 subsistent.
     next(t for t in at.text_input if t.label.startswith("Votre nom")).set_value("testeur").run()
     next(b for b in at.button if b.label == "Valider la pièce").click().run()
     assert not at.exception, [e.value for e in at.exception]
     devis = at.session_state[CLE_DEVIS]
     assert [p.quantite for p in devis.chiffrage.paliers] == [1, 10]
-    assert list(at.dataframe[0].value["quantite"]) == [1, 10]
+    vue_client = at.dataframe[0].value
+    assert list(vue_client["quantite"]) == [1, 10]
+    # Vue client : prix à 2 décimales (un float « 71.60 » s'afficherait « 71.6 »).
+    for colonne in ("prix_unitaire_eur", "prix_total_eur"):
+        valeurs = list(vue_client[colonne])
+        assert all(isinstance(v, str) and re.fullmatch(r"\d+\.\d{2}", v) for v in valeurs), valeurs

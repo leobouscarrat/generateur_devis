@@ -365,13 +365,13 @@ def _ecran_restitution() -> None:
             [
                 {
                     "quantite": p.quantite,
-                    "prix_unitaire_eur": float(
-                        formater_valeur("prix_unitaire_eur", p.prix_unitaire_eur)
+                    # Chaînes formatées : un float perdrait les zéros finaux
+                    # (st.dataframe afficherait « 71.6 », « 72 »), cf. #60.
+                    "prix_unitaire_eur": formater_valeur(
+                        "prix_unitaire_eur", p.prix_unitaire_eur
                     ),
-                    "prix_total_eur": float(
-                        formater_valeur(
-                            "prix_unitaire_eur", p.prix_unitaire_eur * p.quantite
-                        )
+                    "prix_total_eur": formater_valeur(
+                        "prix_unitaire_eur", p.prix_unitaire_eur * p.quantite
                     ),
                 }
                 for p in devis.chiffrage.paliers
@@ -992,15 +992,12 @@ def ecran_validation() -> None:
                     [
                         {
                             "Bloc": ligne["bloc"],
-                            "Variable (€/pièce)": float(
-                                formater_valeur(
-                                    "cout_unitaire_eur", ligne["variable_eur_piece"]
-                                )
+                            # Chaînes formatées (2 décimales), cf. vue client.
+                            "Variable (€/pièce)": formater_valeur(
+                                "cout_unitaire_eur", ligne["variable_eur_piece"]
                             ),
-                            "Fixe (€/lot)": float(
-                                formater_valeur(
-                                    "cout_unitaire_eur", ligne["fixe_eur_lot"]
-                                )
+                            "Fixe (€/lot)": formater_valeur(
+                                "cout_unitaire_eur", ligne["fixe_eur_lot"]
                             ),
                             "Détail": ligne["detail"],
                         }
