@@ -15,8 +15,9 @@ Bornes V1 (tranchées dans la spec) :
 
 from __future__ import annotations
 
+import math
 import re
-from typing import Any, Literal
+from typing import Any, Literal, get_args
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 
@@ -81,18 +82,83 @@ def _resoudre_element(
         raise ErreurCorrection(msg)
     index = int(correspondance.group("index"))
     liste = _lire_chemin(piece, nom_liste)
+    if liste is None:  # section nullable absente (profil_pliage null, #84)
+        msg = (
+            f"Chemin inapplicable (section absente) : {chemin} — la section "
+            f"{nom_liste.split('.')[0]} n'existe pas dans la fiche."
+        )
+        raise ErreurCorrection(msg)
     if not 0 <= index < len(liste):
         msg = f"Index hors de la liste {nom_liste} ({len(liste)} élément(s)) : {index}."
         raise ErreurCorrection(msg)
     return liste, index, modele
 
-CHEMINS_AUTORISES: dict[str, type] = {
-    "matiere.designation.valeur": str,
-    "matiere.epaisseur.valeur": float,
-    "encombrement.largeur.valeur": float,
-    "profil_pliage.rayon_pliage_general": float,
-}
-"""Chemins modifiables par l'assistant (remplacement scalaire uniquement)."""
+CHEMINS_AUTORISES: frozenset[str] = frozenset(
+    {
+        "matiere.designation.valeur",
+        "matiere.epaisseur.valeur",
+        "encombrement.largeur.valeur",
+        "profil_pliage.rayon_pliage_general",
+    }
+)
+"""Chemins modifiables par l'assistant (remplacement scalaire uniquement).
+
+Le type attendu n'est pas tenu ici : il vient du schéma Pydantic
+(``_valider_remplacement``, #84)."""
+
+_NATURES: dict[type, str] = {str: "un texte", float: "un nombre", int: "un entier"}
+"""Libellé du type attendu dans les messages d'erreur."""
+
+
+def _valider_remplacement(
+    piece: PieceExtraite, chemin: str, valeur: Any
+) -> tuple[BaseModel, str, Any]:
+    """Valide un remplacement scalaire contre le schéma (#84).
+
+    Chemin whitelisté, section parente présente, valeur non nulle (pas de
+    suppression en V1), puis validation **stricte** du champ par son modèle
+    Pydantic (type et contraintes du schéma : ni dict, ni liste, ni booléen,
+    ni texte pour un nombre) ; nombre non fini refusé.
+
+    Returns:
+        (objet parent dans ``piece``, nom du champ, valeur validée).
+
+    Raises:
+        ErreurCorrection: message lisible, sans rien modifier.
+    """
+    if chemin not in CHEMINS_AUTORISES:
+        msg = f"Chemin non autorisé : {chemin!r}."
+        raise ErreurCorrection(msg)
+    *sections, champ = chemin.split(".")
+    parent: Any = piece
+    for segment in sections:
+        parent = getattr(parent, segment, None)
+        if parent is None:
+            msg = f"Chemin inapplicable (section absente) : {chemin}."
+            raise ErreurCorrection(msg)
+    libelle = LIBELLES_CHEMINS[chemin][0]
+    if valeur is None:
+        msg = f"Valeur vide pour {libelle} : la suppression n'est pas prise en charge."
+        raise ErreurCorrection(msg)
+    modele = type(parent)
+    natures = [
+        _NATURES.get(t, t.__name__)
+        for t in get_args(modele.model_fields[champ].annotation)
+        if isinstance(t, type) and t is not type(None)
+    ]
+    attendu = f" (attendu : {' ou '.join(natures)})" if natures else ""
+    msg = f"Valeur incompatible pour {libelle} : « {_resume_valeur(valeur)} »{attendu}."
+    try:
+        valide = modele.__pydantic_validator__.validate_assignment(
+            parent.model_copy(), champ, valeur, strict=True
+        )
+    except ValidationError as e:
+        raise ErreurCorrection(msg) from e
+    resultat = getattr(valide, champ)
+    if isinstance(resultat, float) and not math.isfinite(resultat):
+        raise ErreurCorrection(msg)
+    return parent, champ, resultat
+
 
 # --- Libellés d'affichage avant/après (issue #67) -----------------------------
 # Garde-fous dans tests/test_correction.py : toute extension de la whitelist ou
@@ -233,7 +299,7 @@ def _lignes_diff(piece: PieceExtraite, diff: DiffCorrection) -> list[tuple[str, 
     justification = diff.justification
     if diff.type == "remplacement":
         libelle, cle = LIBELLES_CHEMINS[diff.chemin or ""]
-        nouvelle = CHEMINS_AUTORISES[diff.chemin or ""](diff.nouvelle_valeur)
+        _, _, nouvelle = _valider_remplacement(piece, diff.chemin or "", diff.nouvelle_valeur)
         avant = _lire_chemin(piece, diff.chemin or "")
         return [(libelle, _formater(cle, avant), _formater(cle, nouvelle), justification)]
     if diff.type == "creation_section":
@@ -313,7 +379,8 @@ class PropositionCorrection(BaseModel):
         annule tout le diff (ErreurCorrection).
 
         Returns:
-            La pièce corrigée (l'originale n'est jamais modifiée).
+            La pièce corrigée, validée par le schéma (l'originale n'est
+            jamais modifiée).
 
         Raises:
             ErreurCorrection: chemin hors whitelist, type incompatible,
@@ -323,11 +390,10 @@ class PropositionCorrection(BaseModel):
         for diff in self.diffs:
             _appliquer_diff(corrigee, diff)
         try:
-            PieceExtraite.model_validate(corrigee.model_dump())
+            return PieceExtraite.model_validate(corrigee.model_dump())
         except ValidationError as e:
             msg = f"La correction rend la fiche invalide : {e.errors()[0]['msg']}."
             raise ErreurCorrection(msg) from e
-        return corrigee
 
     def ligne_avant_apres(self, piece: PieceExtraite) -> list[tuple[str, str, str, str]]:
         """(champ, avant, après, justification) lisibles pour un deviseur.
@@ -363,24 +429,10 @@ def _lire_chemin(piece: PieceExtraite, chemin: str) -> Any:
 
 def _appliquer_diff(piece: PieceExtraite, diff: DiffCorrection) -> None:
     if diff.type == "remplacement":
-        chemin = diff.chemin or ""
-        if chemin not in CHEMINS_AUTORISES:
-            msg = f"Chemin non autorisé : {chemin!r}."
-            raise ErreurCorrection(msg)
-        type_attendu = CHEMINS_AUTORISES[chemin]
-        try:
-            valeur = type_attendu(diff.nouvelle_valeur)
-        except (TypeError, ValueError) as e:
-            msg = f"Valeur incompatible pour {chemin} : {diff.nouvelle_valeur!r}."
-            raise ErreurCorrection(msg) from e
-        segments = chemin.split(".")
-        cible: Any = piece
-        for segment in segments[:-1]:
-            cible = getattr(cible, segment, None)
-            if cible is None:
-                msg = f"Chemin inapplicable (section absente) : {chemin}."
-                raise ErreurCorrection(msg)
-        setattr(cible, segments[-1], valeur)
+        parent, champ, valeur = _valider_remplacement(
+            piece, diff.chemin or "", diff.nouvelle_valeur
+        )
+        setattr(parent, champ, valeur)
     elif diff.type == "creation_section":
         section = diff.chemin or ""
         modele_section = SECTIONS_CREABLES.get(section)
@@ -388,7 +440,7 @@ def _appliquer_diff(piece: PieceExtraite, diff: DiffCorrection) -> None:
             msg = f"Section non créable : {section!r}."
             raise ErreurCorrection(msg)
         if getattr(piece, section, None) is not None:
-            msg = f"Section déjà présente : {section} — utilisez un remplacement."
+            msg = f"La section {section} existe déjà dans la fiche — utilisez un remplacement."
             raise ErreurCorrection(msg)
         try:
             setattr(piece, section, modele_section.model_validate(diff.nouvelle_valeur))
@@ -452,7 +504,11 @@ def proposer_correction(piece: PieceExtraite, texte: str, nom_modele: str) -> Pr
     if not texte.strip():
         msg = "Décrivez la correction à apporter."
         raise ErreurCorrection(msg)
-    modele = creer_modele(nom_modele)
+    try:
+        modele = creer_modele(nom_modele)
+    except ValueError as e:  # désignation de modèle mal formée ou inconnue
+        msg = f"Assistant indisponible : {e}"
+        raise ErreurCorrection(msg) from e
     try:
         reponse = modele.generer(
             prompt_systeme_correction(),
@@ -467,46 +523,12 @@ def proposer_correction(piece: PieceExtraite, texte: str, nom_modele: str) -> Pr
     except (ValidationError, ValueError) as e:
         msg = "Réponse de l'assistant illisible — reformulez la correction."
         raise ErreurCorrection(msg) from e
-    # Validation précoce des chemins : une proposition hors whitelist ou
-    # inapplicable (section absente de la fiche courante) est rejetée
-    # immédiatement, avant même l'affichage avant/après.
-    for diff in proposition.diffs:
-        if diff.type == "modification_element":
-            try:
-                _resoudre_element(piece, diff.chemin or "")
-            except ErreurCorrection as e:
-                msg = f"L'assistant propose une modification d'élément impossible : {e}"
-                raise ErreurCorrection(msg) from e
-            continue
-        if diff.type == "ajout_element":
-            if (diff.chemin or "") not in LISTES_ENRICHISSABLES:
-                msg = f"L'assistant propose une liste non enrichissable : {diff.chemin!r}."
-                raise ErreurCorrection(msg)
-            continue
-        if diff.type == "creation_section":
-            section = diff.chemin or ""
-            if section not in SECTIONS_CREABLES:
-                msg = f"L'assistant propose une section non créable : {section!r}."
-                raise ErreurCorrection(msg)
-            if getattr(piece, section, None) is not None:
-                msg = (
-                    f"L'assistant propose de créer {section!r} alors que la section "
-                    "existe déjà dans la fiche courante."
-                )
-                raise ErreurCorrection(msg)
-            continue
-        if diff.type != "remplacement":
-            continue
-        if diff.chemin not in CHEMINS_AUTORISES:
-            msg = f"L'assistant propose un chemin non autorisé : {diff.chemin!r}."
-            raise ErreurCorrection(msg)
-        cible: Any = piece
-        for segment in (diff.chemin or "").split(".")[:-1]:
-            cible = getattr(cible, segment, None)
-            if cible is None:
-                msg = (
-                    f"L'assistant propose un chemin inapplicable : {diff.chemin!r} "
-                    "(section absente de la fiche courante)."
-                )
-                raise ErreurCorrection(msg)
+    # Validation à la proposition = les règles d'``appliquer`` (source unique,
+    # #84) : un diff inapplicable sur la fiche courante est rejeté avant
+    # l'affichage avant/après. L'écran revalide à l'acceptation.
+    try:
+        proposition.appliquer(piece)
+    except ErreurCorrection as e:
+        msg = f"L'assistant propose une correction inapplicable : {e}"
+        raise ErreurCorrection(msg) from e
     return proposition
