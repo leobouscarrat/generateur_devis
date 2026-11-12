@@ -32,7 +32,7 @@ from generateur_devis.data.acces import (
     list_matieres,
 )
 from generateur_devis.data.db import get_session
-from generateur_devis.devis import Devis, Modification, emettre
+from generateur_devis.devis import Devis, ErreurDevis, Modification, emettre
 from generateur_devis.extraction.correction import (
     ErreurCorrection,
     PropositionCorrection,
@@ -384,17 +384,21 @@ def _ecran_restitution() -> None:
     # --- Marge (modifiable jusqu'à l'émission, rechiffrée depuis coûts figés) ---
     if not lecture_seule:
         with st.form("marge"):
+            # Pas de min_value/max_value : la marge administrée n'est pas bornée
+            # et la planterait ; la seule règle est Devis.changer_marge (#62).
             marge = st.number_input(
                 "Marge",
-                min_value=0.0,
-                max_value=0.95,
                 value=float(devis.marge),
                 step=0.01,
                 format="%.2f",
             )
             if st.form_submit_button("Appliquer la marge") and marge != devis.marge:
-                devis.changer_marge(devis.auteur or "inconnu", marge)
-                st.rerun()
+                try:
+                    devis.changer_marge(devis.auteur or "inconnu", marge)
+                except ErreurDevis as e:
+                    st.error(f"⛔ {e}")
+                else:
+                    st.rerun()
 
     # --- Vue interne : alertes (contrôles prix, comparaison historique) ----------
     # Recalculées depuis le Devis (pièce, flan, matière validés, marge courante),
