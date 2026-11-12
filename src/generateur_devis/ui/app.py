@@ -598,22 +598,37 @@ def _nombre(valeur: object) -> float | None:
     return None if math.isnan(nombre) else nombre
 
 
+def _ligne_remplie(ligne: dict) -> bool:
+    """Vrai si au moins une cellule porte une valeur (None, "" et NaN = vide).
+
+    Une ligne neuve du data_editor a ses cellules numériques à ``NaN``
+    (truthy) : elle doit être vue comme vide, pas comme une ligne remplie.
+    """
+    return any(
+        v is not None and v != "" and not (isinstance(v, float) and math.isnan(v))
+        for v in ligne.values()
+    )
+
+
 def _valider_lignes(lignes_profil: list[dict], lignes_trous: list[dict]) -> list[str]:
     """Valide les lignes des data_editor — aucune suppression silencieuse.
 
     Schéma attendu (documenté pour la conversion DataFrame → schéma pièce) :
     - profil : ``type`` (« aile » | « pli »), ``longueur`` (aile, mm > 0),
-      ``angle`` (pli, degrés), ``sens`` (pli, « haut » | « bas ») ;
+      ``angle`` (pli, degrés, 0 < angle ≤ 180 : bornes de ``schema.piece.Pli``),
+      ``sens`` (pli, « haut » | « bas ») ; les lignes alternent aile, pli,
+      aile… et finissent par une aile (une seule erreur, sur la 1re ligne
+      fautive ; les lignes de type invalide sont exclues de ce contrôle) ;
     - trous : ``forme``, ``diametre`` (mm > 0), ``quantite`` (≥ 1).
 
-    Une ligne entièrement vide est ignorée (ligne neuve du data_editor) ;
-    une ligne **partiellement** remplie est une erreur explicite — elle ne
-    doit jamais disparaître du chiffrage sans avertissement.
+    Une ligne entièrement vide (:func:`_ligne_remplie`) est ignorée (ligne
+    neuve du data_editor) ; une ligne **partiellement** remplie est une erreur
+    explicite — elle ne doit jamais disparaître du chiffrage sans avertissement.
     """
     erreurs: list[str] = []
+    types_valides: list[tuple[int, str]] = []
     for i, ligne in enumerate(lignes_profil, start=1):
-        remplie = any(v is not None and v != "" for v in ligne.values())
-        if not remplie:
+        if not _ligne_remplie(ligne):
             continue
         type_, longueur, angle, sens = (
             ligne.get("type"),
@@ -627,16 +642,29 @@ def _valider_lignes(lignes_profil: list[dict], lignes_trous: list[dict]) -> list
         elif type_ == "pli":
             if angle is None:
                 erreurs.append(f"Profil ligne {i} : pli sans angle.")
+            elif not 0 < angle <= 180:  # bornes du schéma (Pli.angle : gt=0, le=180)
+                erreurs.append(
+                    f"Profil ligne {i} : angle entre 0 et 180° attendu (reçu {angle:g})."
+                )
             if sens not in ("haut", "bas"):
                 erreurs.append(f"Profil ligne {i} : sens du pli « haut » ou « bas » attendu.")
         else:
             erreurs.append(f"Profil ligne {i} : type « aile » ou « pli » attendu, reçu {type_!r}.")
+            continue
+        types_valides.append((i, type_))
+    for rang, (i, type_) in enumerate(types_valides):
+        attendu = "aile" if rang % 2 == 0 else "pli"
+        if type_ != attendu:
+            erreurs.append(
+                f"Profil ligne {i} : {attendu} attendu ici — les lignes alternent "
+                "aile, pli, aile… et finissent par une aile."
+            )
+            break
+    else:
+        if types_valides and types_valides[-1][1] == "pli":
+            erreurs.append("Profil : le profil doit finir par une aile.")
     for i, ligne in enumerate(lignes_trous, start=1):
-        remplie = any(
-            (v is not None and v != "") and not (isinstance(v, float) and math.isnan(v))
-            for v in ligne.values()
-        )
-        if not remplie:
+        if not _ligne_remplie(ligne):
             continue
         forme = ligne.get("forme") or "rond"
         diametre, quantite = _nombre(ligne.get("diametre")), _nombre(ligne.get("quantite"))
@@ -969,7 +997,7 @@ def _editer_piece(
         return None, matiere_id, erreurs
 
     for ligne in lignes_profil_editees:
-        if not any(v is not None and v != "" for v in ligne.values()):
+        if not _ligne_remplie(ligne):
             continue  # ligne vide du data_editor
         if ligne["type"] == "aile":
             elements.append(Aile(longueur=float(ligne["longueur"])))
@@ -984,19 +1012,23 @@ def _editer_piece(
             quantite=int(_nombre(ligne.get("quantite")) or 1),
         )
         for ligne in lignes_trous_editees
-        if any(v is not None and v != "" for v in ligne.values())
+        if _ligne_remplie(ligne)
     ]
 
     editee = piece.model_copy(deep=True)
     editee.matiere.epaisseur.valeur = epaisseur
     editee.matiere.designation.valeur = matiere_id
     editee.encombrement.largeur.valeur = largeur
-    if elements:
-        editee.profil_pliage = ProfilPliage(
+    # Tableau vidé → plus de profil : jamais de retour silencieux à l'extrait.
+    editee.profil_pliage = (
+        ProfilPliage(
             cotation=piece.profil_pliage.cotation if piece.profil_pliage else "exterieure",
             rayon_pliage_general=rayon_general,
             elements=elements,
         )
+        if elements
+        else None
+    )
     editee.contours.trous = trous
     return editee, matiere_id, []
 
@@ -1116,15 +1148,16 @@ def ecran_validation() -> None:
         # --- Modèle 3D + prix provisoire --------------------------------------
         col_3d, col_prix = st.columns(2)
         with col_3d:
+            raison = "Pas de profil de pliage : modèle 3D non représenté en V1."
             try:
                 maillage = construire_modele_3d(editee, float(get_parametre("facteur_k", session)))
                 figure = maillage_vers_figure(maillage)
-            except ErreurGeometrie:
-                figure = None
+            except ErreurGeometrie as e:
+                figure, raison = None, f"Modèle 3D non représenté : {e}"
             if figure is not None:
                 st.plotly_chart(figure, width="stretch")
             else:
-                st.info("Pas de profil de pliage : modèle 3D non représenté en V1.")
+                st.info(raison)
         with col_prix:
             if resultat.chiffrage is not None:
                 st.caption("Prix provisoire")

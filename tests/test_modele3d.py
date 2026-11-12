@@ -177,3 +177,20 @@ def test_largeur_absente_erreur():
     piece.encombrement.largeur = Champ[float](valeur=None)
     with pytest.raises(ErreurGeometrie, match="Largeur d'encombrement absente"):
         construire_modele_3d(piece, FACTEUR_K)
+
+
+# --- Alternance aile / pli (issue #65) ----------------------------------------
+
+
+@pytest.mark.parametrize(
+    "elements",
+    [
+        [Aile(longueur=42.0), Aile(longueur=22.0), Pli(angle=90.0), Aile(longueur=18.0)],
+        [],
+    ],
+    ids=["pli supprimé", "vide"],
+)
+def test_profil_incoherent_erreur_geometrie(elements):
+    """Plus d'IndexError : un profil non alterné ou vide lève ErreurGeometrie."""
+    with pytest.raises(ErreurGeometrie, match="incohérent"):
+        construire_profil_2d(_piece(elements), FACTEUR_K)

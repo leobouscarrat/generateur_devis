@@ -25,6 +25,7 @@ from generateur_devis.geometrie import (
     calculer_ba,
     calculer_bd,
     rayon_pli,
+    verifier_alternance,
 )
 from generateur_devis.schema.piece import Aile, PieceExtraite, Pli
 from generateur_devis.ui.formatage import formater_valeur
@@ -55,13 +56,14 @@ def construire_profil_2d(piece: PieceExtraite, facteur_k: float) -> list[Point2D
     ou allongée de BA/2 (cotation intérieure).
 
     Raises:
-        ErreurGeometrie: profil/cotation/rayon/épaisseur manquants, ou profil
-            qui se croise (cotes contradictoires).
+        ErreurGeometrie: profil/cotation/rayon/épaisseur manquants, profil vide
+            ou non alterné, ou profil qui se croise (cotes contradictoires).
     """
     profil = piece.profil_pliage
     if profil is None:
         msg = "Profil de pliage absent : impossible de construire le modèle 3D."
         raise ErreurGeometrie(msg)
+    verifier_alternance(profil)
 
     elements = profil.elements
     plis = [e for e in elements if isinstance(e, Pli)]

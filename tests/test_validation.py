@@ -7,7 +7,9 @@ géométrie → faisabilité → chiffrage → contrôles sur une pièce modifi�
 
 from __future__ import annotations
 
+import pandas as pd
 import pytest
+from pydantic import ValidationError
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -41,6 +43,8 @@ from generateur_devis.ui.app import (
     Rattachement,
     ValeurInitiale,
     _champs_peu_surs,
+    _editer_piece,
+    _ligne_remplie,
     _valider_lignes,
     libelle_composant,
     lire_composants,
@@ -161,6 +165,7 @@ def test_valider_lignes_valides():
         {"type": "aile", "longueur": 42.0, "angle": None, "sens": None},
         {"type": "pli", "longueur": None, "angle": 90.0, "sens": "haut"},
         {"type": None, "longueur": None, "angle": None, "sens": None},  # ligne vide ignorée
+        {"type": "aile", "longueur": 18.0, "angle": None, "sens": None},
     ]
     trous = [{"forme": "rond", "diametre": 8.75, "quantite": 2}]
     assert _valider_lignes(profil, trous) == []
@@ -176,7 +181,12 @@ def test_valider_lignes_aile_sans_longueur():
 
 def test_valider_lignes_pli_incomplet():
     erreurs = _valider_lignes(
-        [{"type": "pli", "longueur": None, "angle": None, "sens": "gauche"}], []
+        [
+            {"type": "aile", "longueur": 30.0, "angle": None, "sens": None},
+            {"type": "pli", "longueur": None, "angle": None, "sens": "gauche"},
+            {"type": "aile", "longueur": 20.0, "angle": None, "sens": None},
+        ],
+        [],
     )
     assert len(erreurs) == 2  # angle manquant + sens invalide
 
@@ -250,6 +260,164 @@ def test_valider_lignes_trou_forme_autre_refusee():
               "largeur": None, "quantite": 1}]
     )
     assert any("autre" in e for e in erreurs)
+
+
+# --- Profil : bornes d'angle, alternance, lignes vides (issue #65) ------------
+
+NAN = float("nan")
+
+
+def _aile(longueur: float) -> dict:
+    return {"type": "aile", "longueur": longueur, "angle": None, "sens": None}
+
+
+def _pli(angle: float, sens: str = "haut") -> dict:
+    return {"type": "pli", "longueur": None, "angle": angle, "sens": sens}
+
+
+@pytest.mark.parametrize("angle", [0.0, -5.0, 180.01, 200.0])
+def test_valider_lignes_angle_hors_bornes(angle):
+    erreurs = _valider_lignes([_aile(30.0), _pli(angle), _aile(20.0)], [])
+    assert len(erreurs) == 1
+    assert "Profil ligne 2" in erreurs[0]
+    assert "entre 0 et 180" in erreurs[0]
+
+
+@pytest.mark.parametrize("angle", [180.0, 0.5])
+def test_valider_lignes_angle_dans_les_bornes(angle):
+    assert _valider_lignes([_aile(30.0), _pli(angle), _aile(20.0)], []) == []
+
+
+@pytest.mark.parametrize("angle", [0.0, -5.0, 0.5, 90.0, 180.0, 180.01, 200.0])
+def test_bornes_angle_formulaire_egales_bornes_schema(angle):
+    """Garde-fou : _valider_lignes accepte exactement les angles acceptés par Pli."""
+    accepte_formulaire = _valider_lignes([_aile(30.0), _pli(angle), _aile(20.0)], []) == []
+    try:
+        Pli(angle=angle, sens="haut")
+        accepte_schema = True
+    except ValidationError:
+        accepte_schema = False
+    assert accepte_formulaire == accepte_schema
+
+
+def test_valider_lignes_angle_nan_un_seul_message():
+    """Cellule d'angle vidée → « pli sans angle », pas de 2e message de bornes."""
+    erreurs = _valider_lignes([_aile(30.0), _pli(NAN), _aile(20.0)], [])
+    assert erreurs == ["Profil ligne 2 : pli sans angle."]
+
+
+def test_valider_lignes_alternance_ligne_supprimee():
+    """aile, aile, pli, aile (un pli supprimé) → une seule erreur, sur la ligne 2."""
+    erreurs = _valider_lignes([_aile(42.0), _aile(22.0), _pli(90.0), _aile(18.0)], [])
+    assert len(erreurs) == 1
+    assert "Profil ligne 2" in erreurs[0]
+    assert "pli attendu" in erreurs[0]
+    assert "alternent" in erreurs[0]
+
+
+def test_valider_lignes_profil_finit_par_un_pli():
+    erreurs = _valider_lignes([_aile(42.0), _pli(90.0)], [])
+    assert erreurs == ["Profil : le profil doit finir par une aile."]
+
+
+def test_valider_lignes_profil_commence_par_un_pli():
+    erreurs = _valider_lignes([_pli(90.0), _aile(42.0)], [])
+    assert len(erreurs) == 1
+    assert "Profil ligne 1" in erreurs[0]
+    assert "aile attendu" in erreurs[0]
+
+
+def test_valider_lignes_type_invalide_exclu_de_l_alternance():
+    """Une ligne de type invalide ne déclenche pas d'erreur d'alternance en cascade."""
+    erreurs = _valider_lignes(
+        [_aile(42.0), _pli(90.0), {"type": "courbe", "longueur": 5.0}, _aile(18.0)], []
+    )
+    assert len(erreurs) == 1
+    assert "Profil ligne 3" in erreurs[0] and "type" in erreurs[0]
+
+
+def test_valider_lignes_ligne_vide_intercalee_ignoree():
+    vide = {"type": None, "longueur": NAN, "angle": NAN, "sens": None}
+    assert _valider_lignes([_aile(42.0), vide, _pli(90.0), _aile(18.0)], []) == []
+
+
+def test_valider_lignes_piece_plate_valide():
+    assert _valider_lignes([_aile(75.0)], []) == []
+
+
+def test_valider_lignes_ligne_neuve_nan_ignoree():
+    """Ligne neuve du data_editor : cellules numériques NaN → ni erreur ni élément."""
+    erreurs = _valider_lignes(
+        [{"type": None, "longueur": NAN, "angle": NAN, "sens": None}],
+        [{"forme": None, "diametre": NAN, "longueur": NAN, "largeur": NAN, "quantite": NAN}],
+    )
+    assert erreurs == []
+
+
+@pytest.mark.parametrize(
+    ("ligne", "attendu"),
+    [
+        ({"a": None, "b": ""}, False),
+        ({"a": NAN, "b": None}, False),
+        ({}, False),
+        ({"a": 0.0, "b": None}, True),
+        ({"a": None, "b": "aile"}, True),
+    ],
+)
+def test_ligne_remplie(ligne, attendu):
+    assert _ligne_remplie(ligne) is attendu
+
+
+def _faux_data_editor(profil: pd.DataFrame | None, trous: pd.DataFrame | None):
+    """Remplace st.data_editor : renvoie le tableau « édité » selon la clé."""
+
+    def data_editor(donnees, *, key, **_):
+        remplacement = {"editeur_profil": profil, "editeur_trous": trous}[key]
+        return donnees if remplacement is None else remplacement
+
+    return data_editor
+
+
+def _editer(piece: PieceExtraite):
+    choix = {"S235JR — acier (EN 10025)": "S235JR"}
+    matiere = matiere_initiale(None, piece.matiere.designation.valeur, choix.values())
+    return _editer_piece(piece, choix, matiere)
+
+
+def test_editer_piece_profil_vide_donne_profil_none(monkeypatch):
+    """Toutes les lignes du profil supprimées → profil None, pas le profil extrait."""
+    vide = pd.DataFrame([], columns=["type", "longueur", "angle", "sens"])
+    monkeypatch.setattr("generateur_devis.ui.app.st.data_editor", _faux_data_editor(vide, None))
+    editee, _, erreurs = _editer(piece_support(MATIERE))
+    assert erreurs == []
+    assert editee is not None
+    assert editee.profil_pliage is None
+
+
+def test_editer_piece_ligne_neuve_nan_sans_trou_fantome(monkeypatch):
+    """Ligne neuve vide (NaN) dans les trous et le profil : aucun élément créé."""
+    profil = pd.DataFrame(
+        [_aile(75.0), {"type": None, "longueur": NAN, "angle": NAN, "sens": None}],
+        columns=["type", "longueur", "angle", "sens"],
+    )
+    trous = pd.DataFrame(
+        [
+            {"forme": "rond", "diametre": 8.0, "longueur": NAN, "largeur": NAN, "quantite": 2},
+            {"forme": None, "diametre": NAN, "longueur": NAN, "largeur": NAN, "quantite": NAN},
+        ],
+        columns=["forme", "diametre", "longueur", "largeur", "quantite"],
+    )
+    monkeypatch.setattr(
+        "generateur_devis.ui.app.st.data_editor", _faux_data_editor(profil, trous)
+    )
+    editee, _, erreurs = _editer(piece_support(MATIERE))
+    assert erreurs == []
+    assert editee is not None
+    assert [(t.forme, t.diametre, t.quantite) for t in editee.contours.trous] == [
+        ("rond", 8.0, 2)
+    ]
+    assert editee.profil_pliage is not None
+    assert len(editee.profil_pliage.elements) == 1
 
 
 # --- Valeurs initiales des champs bornés (issue #58) -------------------------

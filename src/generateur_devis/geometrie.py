@@ -26,7 +26,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
-from generateur_devis.schema.piece import Aile, PieceExtraite, Pli, Trou
+from generateur_devis.schema.piece import Aile, PieceExtraite, Pli, ProfilPliage, Trou
 from generateur_devis.ui.formatage import formater_valeur
 
 Point2D = tuple[float, float]
@@ -91,6 +91,25 @@ def rayon_pli(pli: Pli, rayon_general: float | None, indice: int) -> float:
     return rayon
 
 
+def verifier_alternance(profil: ProfilPliage) -> None:
+    """Erreur si le profil est vide ou n'alterne pas aile/pli (début et fin = aile).
+
+    Raises:
+        ErreurGeometrie: "Profil de pliage incohérent : ailes et plis doivent alterner,
+            en commençant et en finissant par une aile."
+    """
+    elements = profil.elements
+    alterne = len(elements) % 2 == 1 and all(
+        isinstance(e, Aile if i % 2 == 0 else Pli) for i, e in enumerate(elements)
+    )
+    if not alterne:
+        msg = (
+            "Profil de pliage incohérent : ailes et plis doivent alterner, "
+            "en commençant et en finissant par une aile."
+        )
+        raise ErreurGeometrie(msg)
+
+
 def longueur_developpee(piece: PieceExtraite, facteur_k: float) -> float:
     """Longueur développée du profil de pliage, en mm.
 
@@ -99,13 +118,14 @@ def longueur_developpee(piece: PieceExtraite, facteur_k: float) -> float:
     - pièce plate (une seule aile) : longueur de l'aile.
 
     Raises:
-        ErreurGeometrie: profil absent, cotation inconnue, rayon non coté,
-            ou développé nul/négatif (cotes contradictoires).
+        ErreurGeometrie: profil absent, vide ou non alterné, cotation inconnue,
+            rayon non coté, ou développé nul/négatif (cotes contradictoires).
     """
     profil = piece.profil_pliage
     if profil is None:
         msg = "Profil de pliage absent : impossible de construire le flan."
         raise ErreurGeometrie(msg)
+    verifier_alternance(profil)
 
     ailes = [e for e in profil.elements if isinstance(e, Aile)]
     plis = [e for e in profil.elements if isinstance(e, Pli)]
