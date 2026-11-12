@@ -496,3 +496,53 @@ def test_modele_sans_cle_api_erreur_admin_claire(monkeypatch, session):
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     with pytest.raises(ErreurAdmin, match="Agent indisponible.*clé d'API manquante"):
         proposer_modifications("le S235JR passe à 1,25 €/kg", "openrouter:modele-x", session)
+
+
+# --- Paramètre modele_extraction validé (issue #92) ---------------------------
+
+
+def _diff_modele_extraction(valeur: str) -> dict:
+    return {"modifications": [{
+        "type": "mise_a_jour", "table": "parametres", "ligne_id": "modele_extraction",
+        "champ": "valeur", "valeur": valeur, "justification": "test",
+    }]}
+
+
+@pytest.mark.parametrize("valeur", ["sonnet", "openrouter:", "foo:bar", ""])
+def test_modele_extraction_mal_forme_refuse_a_la_proposition(monkeypatch, session, valeur):
+    _bouchon_modele(monkeypatch, _diff_modele_extraction(valeur))
+    with pytest.raises(ErreurAdmin, match="Modèle d'extraction invalide") as exc:
+        proposer_modifications("le modèle d'extraction passe à " + valeur, "test", session)
+    assert "claude-code, openrouter, nous" in str(exc.value)
+    assert get_parametre("modele_extraction", session) == "claude-code:sonnet"
+
+
+@pytest.mark.parametrize("valeur", ["openrouter:google/gemini-2.5-flash", "claude-code:opus"])
+def test_modele_extraction_bien_forme_accepte(monkeypatch, session, valeur):
+    """Format seul : ni clé d'API ni exécutable vérifiés (configuration serveur)."""
+    _bouchon_modele(monkeypatch, _diff_modele_extraction(valeur))
+    proposition = proposer_modifications("le modèle passe à " + valeur, "test", session)
+    proposition.appliquer("admin", session)
+    session.commit()
+    assert get_parametre("modele_extraction", session) == valeur
+
+
+def test_appliquer_revalide_le_modele_extraction_sans_audit(session):
+    proposition = PropositionAdmin(modifications=[ModificationAdmin(
+        type="mise_a_jour", table="parametres", ligne_id="modele_extraction",
+        champ="valeur", valeur="sonnet", justification="test",
+    )])
+    with pytest.raises(ErreurAdmin, match="Modèle d'extraction invalide"):
+        proposition.appliquer("admin", session)
+    assert get_parametre("modele_extraction", session) == "claude-code:sonnet"
+    assert historique(session) == []
+
+
+def test_prompt_admin_enonce_le_format_du_modele():
+    from generateur_devis.llm import FOURNISSEURS
+
+    prompt = prompt_systeme_admin()
+    assert "modele_extraction" in prompt
+    assert "fournisseur:modèle" in prompt
+    for fournisseur in FOURNISSEURS:
+        assert fournisseur in prompt

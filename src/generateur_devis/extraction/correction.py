@@ -26,7 +26,7 @@ from generateur_devis.extraction.prompt import (
     prompt_systeme_correction,
     prompt_utilisateur_correction,
 )
-from generateur_devis.llm import creer_modele
+from generateur_devis.llm import MODELE_MAL_CONFIGURE, creer_modele
 from generateur_devis.llm.base import ErreurModele
 from generateur_devis.schema.piece import (
     Aile,
@@ -507,6 +507,9 @@ def proposer_correction(piece: PieceExtraite, texte: str, nom_modele: str) -> Pr
     try:
         modele = creer_modele(nom_modele)
     except ValueError as e:  # désignation de modèle mal formée ou inconnue
+        msg = f"{MODELE_MAL_CONFIGURE} : {e}"
+        raise ErreurCorrection(msg) from e
+    except ErreurModele as e:  # construction : clé d'API absente, Claude Code introuvable
         msg = f"Assistant indisponible : {e}"
         raise ErreurCorrection(msg) from e
     try:
