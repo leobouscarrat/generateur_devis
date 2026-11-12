@@ -17,7 +17,7 @@ import sys
 
 from etude_extraction.executer import executer, tableau
 from etude_extraction.jeux import charger_jeu
-from generateur_devis.llm import creer_modele
+from generateur_devis.llm import ErreurModele, argument_modele, creer_modele
 
 
 def main() -> int:
@@ -31,19 +31,24 @@ def main() -> int:
     )
     parser.add_argument("--partie", default="dev", choices=["dev", "test"])
     parser.add_argument("--niveau", type=int, default=0, choices=[0, 1, 2, 3])
-    parser.add_argument("--modele", default="claude-code:sonnet")
+    parser.add_argument("--modele", type=argument_modele, default="claude-code:sonnet")
     parser.add_argument("--limite", type=int, help="Ne traiter que les N premiers plans")
     parser.add_argument("--paralleles", type=int, default=2, help="Appels simultanés")
     args = parser.parse_args()
+
+    # Modèle construit avant le jeu : une configuration invalide échoue tout de
+    # suite, avec un message clair (issue #99).
+    try:
+        modele = creer_modele(args.modele)
+    except ErreurModele as e:
+        parser.error(f"Modèle d'IA indisponible : {e}")
 
     jeu = charger_jeu(args.jeu, args.partie, args.niveau)
     if args.limite:
         jeu.echantillons = jeu.echantillons[: args.limite]
     print(f"{len(jeu.echantillons)} plans à évaluer…", file=sys.stderr)
 
-    resultats, resume, chemin = executer(
-        jeu, creer_modele(args.modele), args.partie, args.paralleles
-    )
+    resultats, resume, chemin = executer(jeu, modele, args.partie, args.paralleles)
     for r in resultats:
         if r.extraction.piece is None:
             print(f"Échec {r.identifiant} : {r.extraction.erreur}", file=sys.stderr)

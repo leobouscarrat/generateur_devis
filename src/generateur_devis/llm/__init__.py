@@ -6,6 +6,7 @@ Un modèle est désigné par « fournisseur:modèle », par exemple :
 - nous:<modèle>                 (Nous Research, clé NOUS_API_KEY)
 """
 
+import argparse
 import os
 
 from dotenv import find_dotenv, load_dotenv
@@ -48,6 +49,19 @@ def verifier_designation(designation: str) -> tuple[str, str]:
     return fournisseur, modele
 
 
+def argument_modele(designation: str) -> str:
+    """Type argparse de ``--modele`` (CLI) : `verifier_designation` → erreur d'usage.
+
+    Une désignation invalide donne un message d'argparse (code 2), pas un
+    traceback (issue #99).
+    """
+    try:
+        verifier_designation(designation)
+    except ValueError as e:
+        raise argparse.ArgumentTypeError(str(e)) from e
+    return designation
+
+
 def creer_modele(designation: str) -> ModeleVision:
     fournisseur, modele = verifier_designation(designation)
     load_dotenv(find_dotenv(usecwd=True))
@@ -71,6 +85,7 @@ __all__ = [
     "Image",
     "ModeleVision",
     "ReponseModele",
+    "argument_modele",
     "creer_modele",
     "verifier_designation",
 ]
