@@ -325,3 +325,34 @@ def test_devis_sans_flan_refuse(session):
 def test_roundtrip_json_conserve_le_flan(devis_003, flan_003):
     clone = Devis.model_validate_json(devis_003.model_dump_json())
     assert clone.flan == flan_003
+
+
+# --- Bornes de la marge : règle unique de Devis.changer_marge (issue #62) -------
+
+
+def test_changer_marge_096_acceptee(devis_003):
+    """0,96 dépasse l'ancienne borne du widget (0,95) mais respecte 0 ≤ marge < 1."""
+    cout = devis_003.palier_commande().cout_unitaire_eur
+    devis_003.changer_marge("charge_affaires", 0.96)
+    assert devis_003.marge == 0.96
+    assert devis_003.palier_commande().prix_unitaire_eur == pytest.approx(cout / 0.04, rel=1e-9)
+
+
+def test_changer_marge_zero_acceptee(devis_003):
+    """Borne basse incluse : prix = coût."""
+    cout = devis_003.palier_commande().cout_unitaire_eur
+    devis_003.changer_marge("charge_affaires", 0.0)
+    assert devis_003.marge == 0.0
+    assert devis_003.palier_commande().prix_unitaire_eur == pytest.approx(cout, rel=1e-9)
+
+
+@pytest.mark.parametrize("marge", [1.0, -0.01])
+def test_changer_marge_hors_bornes_sans_effet(devis_003, marge):
+    """Marge refusée : ni marge, ni prix, ni journal ne changent."""
+    prix = [p.prix_unitaire_eur for p in devis_003.chiffrage.paliers]
+    nb_modifications = len(devis_003.modifications)
+    with pytest.raises(ErreurDevis, match="Marge invalide"):
+        devis_003.changer_marge("charge_affaires", marge)
+    assert devis_003.marge == 0.25
+    assert [p.prix_unitaire_eur for p in devis_003.chiffrage.paliers] == prix
+    assert len(devis_003.modifications) == nb_modifications
