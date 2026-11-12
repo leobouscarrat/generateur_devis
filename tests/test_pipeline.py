@@ -323,3 +323,127 @@ def test_pipeline_fichier_illisible_sans_appel_modele(monkeypatch, session, cont
     assert resultat.erreur == "Fichier illisible ou vide : déposez un PDF ou une image de plan."
     assert resultat.piece is None
     assert "/" not in resultat.erreur and "tmp" not in resultat.erreur
+
+
+# --- Reprise de l'extraction depuis la mémoire du serveur (issue #68) --------
+
+
+class _ModeleCompteur:
+    """Modèle factice : renvoie toujours le JSON de la pièce et compte ses appels."""
+
+    def __init__(self, piece: PieceExtraite, nom: str = "test:m"):
+        self.texte = piece.model_dump_json()
+        self.nom = nom
+        self.appels = 0
+
+    def generer(self, prompt_systeme, prompt_utilisateur, images):
+        from generateur_devis.llm.base import ReponseModele
+
+        self.appels += 1
+        return ReponseModele(texte=self.texte, modele=self.nom, duree_s=0.1)
+
+
+def _pdf_support(tmp_path) -> bytes:
+    import pymupdf
+
+    chemin_pdf = tmp_path / "support.pdf"
+    with pymupdf.open() as doc:
+        page = doc.new_page()
+        page.insert_text((72, 72), "SUPPORT — S235JR — 2 mm")
+        doc.save(chemin_pdf)
+    return chemin_pdf.read_bytes()
+
+
+def _brancher_modele(monkeypatch, modele) -> None:
+    """Vrai ``charger_plan`` et vrai ``extraire`` ; seul l'appel IA est factice."""
+    monkeypatch.setattr(pipeline, "creer_modele", lambda nom: modele)
+
+
+def test_pipeline_memoire_reprise_sans_appel_ia(monkeypatch, session, tmp_path):
+    contenu = _pdf_support(tmp_path)
+    modele = _ModeleCompteur(piece_support(MATIERE))
+    _brancher_modele(monkeypatch, modele)
+    memoire = {}
+
+    premier = orchestrer_devis(
+        contenu, "support.pdf", None, None, None, "test:m", session, memoire=memoire
+    )
+    second = orchestrer_devis(
+        contenu, "support.pdf", None, None, None, "test:m", session, memoire=memoire
+    )
+
+    assert modele.appels == 1
+    assert premier.erreur is None and second.erreur is None
+    assert premier.extraction_reprise is False
+    assert second.extraction_reprise is True
+    assert second.chiffrage == premier.chiffrage
+    assert second.piece == premier.piece
+
+
+def test_pipeline_memoire_contexte_recalcule(monkeypatch, session, tmp_path):
+    """Même plan, autres quantités : chiffrage aux nouveaux paliers, sans appel IA."""
+    contenu = _pdf_support(tmp_path)
+    modele = _ModeleCompteur(piece_support(MATIERE))
+    _brancher_modele(monkeypatch, modele)
+    memoire = {}
+
+    orchestrer_devis(
+        contenu, "support.pdf", None, [1, 100], None, "test:m", session, memoire=memoire
+    )
+    second = orchestrer_devis(
+        contenu, "support.pdf", None, [10, 50], None, "test:m", session, memoire=memoire
+    )
+
+    assert modele.appels == 1
+    assert second.extraction_reprise is True
+    assert [p.quantite for p in second.chiffrage.paliers] == [10, 50]
+
+
+def test_pipeline_memoire_reprise_sans_matiere(monkeypatch, session, tmp_path):
+    """Résultat partiel (matière non lue) : la reprise est aussi signalée."""
+    contenu = _pdf_support(tmp_path)
+    modele = _ModeleCompteur(piece_support(None))
+    _brancher_modele(monkeypatch, modele)
+    memoire = {}
+
+    orchestrer_devis(contenu, "support.pdf", None, None, None, "test:m", session, memoire=memoire)
+    second = orchestrer_devis(
+        contenu, "support.pdf", None, None, None, "test:m", session, memoire=memoire
+    )
+
+    assert modele.appels == 1
+    assert second.matiere_id is None and second.chiffrage is None
+    assert second.extraction_reprise is True
+
+
+def test_pipeline_sans_memoire_deux_appels(monkeypatch, session, tmp_path):
+    contenu = _pdf_support(tmp_path)
+    modele = _ModeleCompteur(piece_support(MATIERE))
+    _brancher_modele(monkeypatch, modele)
+
+    premier = orchestrer_devis(contenu, "support.pdf", None, None, None, "test:m", session)
+    second = orchestrer_devis(contenu, "support.pdf", None, None, None, "test:m", session)
+
+    assert modele.appels == 2
+    assert premier.extraction_reprise is False and second.extraction_reprise is False
+
+
+def test_pipeline_memoire_garde_la_piece_en_pouces(monkeypatch, session, tmp_path):
+    """La conversion pouces → mm s'applique à la copie servie, jamais à l'entrée mémorisée."""
+    contenu = _pdf_support(tmp_path)
+    modele = _ModeleCompteur(piece_umaine_pouces())
+    _brancher_modele(monkeypatch, modele)
+    memoire = {}
+
+    orchestrer_devis(contenu, "umaine.pdf", None, None, None, "test:m", session, memoire=memoire)
+    second = orchestrer_devis(
+        contenu, "umaine.pdf", None, None, None, "test:m", session, memoire=memoire
+    )
+
+    (entree,) = memoire.values()
+    assert entree.piece.unites.valeur == "in"
+    assert entree.piece.matiere.epaisseur.valeur == pytest.approx(0.06)
+    # Copie servie convertie une seule fois (0,06 in = 1,524 mm, pas 38,7 mm).
+    assert second.extraction_reprise is True
+    assert second.piece.matiere.epaisseur.valeur == pytest.approx(1.524)
+    assert second.conversion.unite_origine == "in"
