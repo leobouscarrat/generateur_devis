@@ -469,3 +469,5 @@ def test_prompt_systeme_demande_d_utiliser_l_index():
     prompt = prompt_systeme_admin()
     assert "index" in prompt
     assert "N'invente jamais un identifiant" in prompt
+    # Les créations (règle 3) gardent une clé nouvelle, absente de l'index.
+    assert "la clé est nouvelle" in prompt
