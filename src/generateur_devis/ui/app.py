@@ -685,7 +685,8 @@ def _valider_lignes(lignes_profil: list[dict], lignes_trous: list[dict]) -> list
     Schéma attendu (documenté pour la conversion DataFrame → schéma pièce) :
     - profil : ``type`` (« aile » | « pli »), ``longueur`` (aile, mm > 0),
       ``angle`` (pli, degrés, 0 < angle ≤ 180 : bornes de ``schema.piece.Pli``),
-      ``sens`` (pli, « haut » | « bas ») ; les lignes alternent aile, pli,
+      ``sens`` (pli, « haut » | « bas »), ``rayon`` (pli, mm >= RAYON_MIN_MM,
+      vide = rayon général ; interdit sur une aile) ; les lignes alternent aile, pli,
       aile… et finissent par une aile (une seule erreur, sur la 1re ligne
       fautive ; les lignes de type invalide sont exclues de ce contrôle) ;
     - trous : ``forme``, ``diametre`` (mm > 0), ``quantite`` (≥ 1).
@@ -705,10 +706,22 @@ def _valider_lignes(lignes_profil: list[dict], lignes_trous: list[dict]) -> list
             _nombre(ligne.get("angle")),
             ligne.get("sens"),
         )
+        rayon = _nombre(ligne.get("rayon"))
         if type_ == "aile":
             if longueur is None or longueur <= 0:
                 erreurs.append(f"Profil ligne {i} : aile sans longueur valide.")
+            if rayon is not None:
+                erreurs.append(
+                    f"Profil ligne {i} : une aile n'a pas de rayon — vider la cellule "
+                    "(le rayon se saisit sur la ligne du pli)."
+                )
         elif type_ == "pli":
+            if rayon is not None and not rayon >= RAYON_MIN_MM:
+                erreurs.append(
+                    f"Profil ligne {i} : rayon intérieur de {rayon:g} mm invalide "
+                    f"(minimum {_nombre_fr(RAYON_MIN_MM)} mm) — corriger, ou vider la "
+                    "cellule pour utiliser le rayon général."
+                )
             if angle is None:
                 erreurs.append(f"Profil ligne {i} : pli sans angle.")
             elif not 0 < angle <= 180:  # bornes du schéma (Pli.angle : gt=0, le=180)
@@ -887,6 +900,41 @@ def _en_pouces(
     return None if origine is None else f"{_nombre_fr(origine)} in"
 
 
+def explication_rayons_plis(
+    profil: ProfilPliage | None,
+    rayon_general: ValeurInitiale,
+    conversion: ConversionUnites | None = None,
+) -> str:
+    """Origine des rayons par pli, affichée sous le tableau du profil (issue #72).
+
+    Toujours non vide : la règle (cellule vide → rayon général, avec sa valeur
+    et son origine), puis les rayons propres aux plis lus sur le plan, repérés
+    par leur ligne initiale (index de l'élément + 1), avec la lecture en
+    pouces si le plan est en pouces.
+    """
+    if rayon_general.valeur is None:
+        general = "à saisir"
+    else:
+        origine = (
+            "lu sur le plan" if rayon_general.origine == "plan" else "défaut atelier, à confirmer"
+        )
+        general = f"{_nombre_fr(rayon_general.valeur)} mm, {origine}"
+    texte = (
+        f"Rayon intérieur : propre au pli s'il est coté ; cellule vide → rayon général ({general})."
+    )
+    lus = []
+    for i, element in enumerate(profil.elements if profil else []):
+        r = getattr(element, "rayon_interieur", None)
+        if r is None:
+            continue
+        pouces = _en_pouces(conversion, f"profil_pliage.elements[{i}].rayon_interieur", r)
+        valeur = f"{pouces} → {_mm_fr(r)} mm" if pouces else f"{_nombre_fr(r)} mm"
+        lus.append(f"ligne {i + 1} : {valeur}")
+    if lus:
+        return f"{texte} Lus sur le plan : {' ; '.join(lus)}."
+    return f"{texte} Aucun rayon propre à un pli lu sur le plan."
+
+
 def _afficher_unites(conversion: ConversionUnites) -> None:
     """Unité d'origine du plan, et valeurs converties en mm par le code (#57)."""
     niveau, message = message_unites(conversion)
@@ -1001,15 +1049,27 @@ def _editer_piece(
         for element in piece.profil_pliage.elements:
             if isinstance(element, Aile):
                 lignes_profil.append(
-                    {"type": "aile", "longueur": element.longueur, "angle": None, "sens": None}
+                    {
+                        "type": "aile",
+                        "longueur": element.longueur,
+                        "angle": None,
+                        "sens": None,
+                        "rayon": None,
+                    }
                 )
             else:
                 lignes_profil.append(
-                    {"type": "pli", "longueur": None, "angle": element.angle, "sens": element.sens}
+                    {
+                        "type": "pli",
+                        "longueur": None,
+                        "angle": element.angle,
+                        "sens": element.sens,
+                        "rayon": element.rayon_interieur,
+                    }
                 )
     st.caption("Profil de pliage (une ligne par élément, dans l'ordre)")
     tableau_profil = st.data_editor(
-        pd.DataFrame(lignes_profil, columns=["type", "longueur", "angle", "sens"]),
+        pd.DataFrame(lignes_profil, columns=["type", "longueur", "angle", "sens", "rayon"]),
         num_rows="dynamic",
         key="editeur_profil",
         column_config={
@@ -1021,11 +1081,22 @@ def _editer_piece(
             "sens": st.column_config.SelectboxColumn(
                 "sens", options=["haut", "bas", "inconnu"]
             ),
+            # Pas de min_value : une valeur aberrante reste visible et la
+            # validation la refuse avec un message (une seule borne, RAYON_MIN_MM).
+            "rayon": st.column_config.NumberColumn(
+                "Rayon intérieur (mm)",
+                help="Pli uniquement. Vide = rayon de pliage général.",
+            ),
         },
     )
     lignes_profil_editees = tableau_profil.to_dict("records")
     erreur_profil = erreur_profil_vide(lignes_profil_editees)
     st.caption(("⛔ " if erreur_profil else "") + explication_profil(piece.profil_pliage))
+    st.caption(
+        explication_rayons_plis(
+            piece.profil_pliage, initiales["Rayon de pliage général (mm)"], conversion
+        )
+    )
     # Cotation : pré-remplie si lue, sinon choix exigé dès qu'il y a un pli
     # (pièce plate : sans effet sur le développé, non bloquante).
     cotation_init, explication_cotation = cotation_initiale(piece.profil_pliage)
@@ -1093,7 +1164,13 @@ def _editer_piece(
         if ligne["type"] == "aile":
             elements.append(Aile(longueur=float(ligne["longueur"])))
         else:
-            elements.append(Pli(angle=float(ligne["angle"]), sens=ligne["sens"]))
+            elements.append(
+                Pli(
+                    angle=float(ligne["angle"]),
+                    sens=ligne["sens"],
+                    rayon_interieur=_nombre(ligne.get("rayon")),
+                )
+            )
     trous = [
         Trou(
             forme=ligne["forme"] or "rond",

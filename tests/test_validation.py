@@ -18,6 +18,7 @@ from sqlalchemy.orm import sessionmaker
 from generateur_devis.data.acces import list_composants
 from generateur_devis.data.seed import seed
 from generateur_devis.data.tables import Base
+from generateur_devis.geometrie import ErreurGeometrie, rayon_pli
 from generateur_devis.modele3d import construire_modele_3d
 from generateur_devis.schema.piece import (
     Aile,
@@ -52,6 +53,7 @@ from generateur_devis.ui.app import (
     cotation_initiale,
     erreur_profil_vide,
     explication_profil,
+    explication_rayons_plis,
     libelle_composant,
     lire_composants,
     matiere_initiale,
@@ -61,6 +63,7 @@ from generateur_devis.ui.app import (
 )
 from generateur_devis.ui.pipeline import rechiffrer
 from generateur_devis.ui.rendu3d import maillage_vers_figure
+from generateur_devis.unites import ConversionUnites, ValeurConvertie
 
 MATIERE = "S235JR"
 FACTEUR_K = 0.40
@@ -562,6 +565,126 @@ def test_editer_piece_profil_saisi_main_sans_exterieure_silencieux(monkeypatch):
         "Cotes du profil : pas de profil lu sur le plan — indiquez si les longueurs "
         "saisies sont prises à l'extérieur ou à l'intérieur des plis."
     ]
+
+
+# --- Rayon propre à chaque pli (issue #72) -----------------------------------
+
+
+def _pli_r(rayon) -> dict:
+    return {"type": "pli", "longueur": None, "angle": 90.0, "sens": "haut", "rayon": rayon}
+
+
+@pytest.mark.parametrize("rayon", [3.0, None, NAN, 0.1])
+def test_valider_lignes_rayon_pli_accepte(rayon):
+    assert _valider_lignes([_aile(42.0), _pli_r(rayon), _aile(18.0)], []) == []
+
+
+@pytest.mark.parametrize("rayon", [0.0, -1.0, 0.05])
+def test_valider_lignes_rayon_pli_invalide(rayon):
+    erreurs = _valider_lignes([_aile(42.0), _pli_r(rayon), _aile(18.0)], [])
+    assert len(erreurs) == 1
+    assert "rayon intérieur" in erreurs[0]
+    assert "ligne 2" in erreurs[0]
+    assert "minimum 0,1 mm" in erreurs[0]
+
+
+def test_valider_lignes_rayon_sur_aile_refuse():
+    aile = {**_aile(42.0), "rayon": 5.0}
+    erreurs = _valider_lignes([aile, _pli_r(None), _aile(18.0)], [])
+    assert len(erreurs) == 1
+    assert "une aile n'a pas de rayon" in erreurs[0]
+    assert "ligne 1" in erreurs[0]
+
+
+@pytest.mark.parametrize("rayon", [3.0, 0.1])
+def test_rayon_accepte_au_formulaire_accepte_par_le_moteur(rayon):
+    """Garde-fou : ce que le formulaire laisse passer, le moteur l'accepte."""
+    assert _valider_lignes([_aile(42.0), _pli_r(rayon), _aile(18.0)], []) == []
+    assert rayon_pli(Pli(angle=90, sens="haut", rayon_interieur=rayon), None, 0) == rayon
+
+
+@pytest.mark.parametrize("rayon", [0.0, -1.0])
+def test_rayon_refuse_par_le_moteur_refuse_au_formulaire(rayon):
+    assert _valider_lignes([_aile(42.0), _pli_r(rayon), _aile(18.0)], []) != []
+    with pytest.raises(ErreurGeometrie):
+        rayon_pli(Pli(angle=90, sens="haut", rayon_interieur=rayon), None, 0)
+
+
+def _profil_rayons(rayon_pli_2: float | None) -> ProfilPliage:
+    return ProfilPliage(
+        cotation="exterieure",
+        rayon_pliage_general=2.0,
+        elements=[
+            Aile(longueur=42.0),
+            Pli(angle=90.0, sens="haut", rayon_interieur=rayon_pli_2),
+            Aile(longueur=18.0),
+        ],
+    )
+
+
+def test_explication_rayons_plis_regle_et_rayons_lus():
+    texte = explication_rayons_plis(
+        _profil_rayons(3.0), ValeurInitiale(2.0, "plan", "Rayon : lu sur le plan.")
+    )
+    assert "vide → rayon général (2 mm, lu sur le plan)" in texte
+    assert "Lus sur le plan : ligne 2 : 3 mm." in texte
+
+
+def test_explication_rayons_plis_defaut_atelier():
+    texte = explication_rayons_plis(_profil_rayons(None), ValeurInitiale(2.0, "defaut", "défaut"))
+    assert "(2 mm, défaut atelier, à confirmer)" in texte
+    assert "Aucun rayon propre à un pli lu sur le plan." in texte
+
+
+def test_explication_rayons_plis_general_a_saisir():
+    texte = explication_rayons_plis(None, ValeurInitiale(None, "absente", "à saisir"))
+    assert "rayon général (à saisir)" in texte
+    assert "Aucun rayon propre à un pli" in texte
+
+
+def test_explication_rayons_plis_lecture_en_pouces():
+    conversion = ConversionUnites(
+        unite_origine="in",
+        valeurs=[
+            ValeurConvertie(
+                chemin="profil_pliage.elements[1].rayon_interieur",
+                valeur_origine=0.08,
+                valeur_mm=2.032,
+            )
+        ],
+    )
+    texte = explication_rayons_plis(
+        _profil_rayons(2.032), ValeurInitiale(2.0, "plan", "lu"), conversion
+    )
+    assert "ligne 2 : 0,08 in → 2,03 mm" in texte
+
+
+def test_editer_piece_conserve_le_rayon_du_pli():
+    """Tableau initial rendu tel quel : le rayon propre au pli survit."""
+    piece = piece_support(MATIERE)
+    piece.profil_pliage.elements[1].rayon_interieur = 3.0
+    editee, _, erreurs = _editer(piece)
+    assert erreurs == []
+    assert [getattr(e, "rayon_interieur", "aile") for e in editee.profil_pliage.elements] == [
+        "aile",
+        3.0,
+        "aile",
+        None,
+        "aile",
+    ]
+
+
+def test_editer_piece_cellule_rayon_videe_donne_rayon_general(monkeypatch):
+    piece = piece_support(MATIERE)
+    piece.profil_pliage.elements[1].rayon_interieur = 3.0
+    profil = pd.DataFrame(
+        [_aile(42.0), _pli_r(NAN), _aile(18.0)],
+        columns=["type", "longueur", "angle", "sens", "rayon"],
+    )
+    monkeypatch.setattr("generateur_devis.ui.app.st.data_editor", _faux_data_editor(profil, None))
+    editee, _, erreurs = _editer(piece)
+    assert erreurs == []
+    assert editee.profil_pliage.elements[1].rayon_interieur is None
 
 
 # --- Valeurs initiales des champs bornés (issue #58) -------------------------
