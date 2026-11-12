@@ -1,7 +1,9 @@
 """Instructions données au modèle pour lire un plan.
 
-Toute modification du texte doit s'accompagner d'un changement de VERSION_PROMPT : chaque
-résultat d'évaluation est rattaché à la version du prompt qui l'a produit.
+Toute modification du texte des prompts d'extraction doit s'accompagner d'un changement de
+VERSION_PROMPT : chaque résultat d'évaluation est rattaché à la version du prompt qui l'a
+produit. Les prompts de l'agent d'administration (`CONSIGNES_ADMIN`) n'entrent ni dans
+l'évaluation ni dans la clé de cache : pas de changement de version pour eux.
 """
 
 import json
@@ -179,6 +181,9 @@ Règles :
 5. Chaque modification porte une justification courte.
 6. Demande ambiguë ou hors de ces cas : ne la mets pas dans le diff, signale-la \
 dans une clé "remarque" à la racine.
+7. Marges (clients.marge_specifique, parametres clé marge_defaut) : fraction \
+décimale avec 0 ≤ marge < 1 (25 % → 0.25, jamais 25 ni « 25 % »). Une marge hors \
+de cet intervalle n'est pas mise dans le diff : signale-la dans « remarque ».
 """
 
 

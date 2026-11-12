@@ -1,0 +1,4 @@
+[client]
+# Pas de traceback dans le navigateur (chemins serveur, .venv) : la trace
+# complète reste dans la console du serveur (issue #63).
+showErrorDetails = "none"

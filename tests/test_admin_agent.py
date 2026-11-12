@@ -15,14 +15,23 @@ from sqlalchemy.orm import sessionmaker
 
 from generateur_devis import admin_agent
 from generateur_devis.admin_agent import (
+    REFERENTIELS_MODIFIABLES,
     ErreurAdmin,
     ModificationAdmin,
     PropositionAdmin,
     proposer_modifications,
 )
+from generateur_devis.data.acces import get_parametre
 from generateur_devis.data.audit import historique
 from generateur_devis.data.seed import seed
-from generateur_devis.data.tables import Base, Matiere, ModificationReferentiel, Traitement
+from generateur_devis.data.tables import (
+    Base,
+    Client,
+    Matiere,
+    ModificationReferentiel,
+    Traitement,
+)
+from generateur_devis.extraction.prompt import prompt_systeme_admin
 from generateur_devis.llm.base import ReponseModele
 
 
@@ -264,3 +273,120 @@ def test_cle_composite(session):
 
     ligne = session.get(EpaisseurDispo, {"matiere_id": "S235JR", "epaisseur_mm": 2.0})
     assert ligne.en_stock is False
+
+
+# --- Marges bornées 0 <= marge < 1 (issue #71) --------------------------------
+
+
+def _maj(table: str, ligne_id: str, champ: str, valeur) -> dict:
+    return {
+        "modifications": [
+            {
+                "type": "mise_a_jour",
+                "table": table,
+                "ligne_id": ligne_id,
+                "champ": champ,
+                "valeur": valeur,
+                "justification": "test",
+            }
+        ]
+    }
+
+
+@pytest.mark.parametrize("valeur", ["1", "1.0", "1.5", "-0.1", "nan", "inf"])
+def test_marge_defaut_hors_bornes_refusee_a_la_proposition(monkeypatch, session, valeur):
+    _bouchon_modele(monkeypatch, _maj("parametres", "marge_defaut", "valeur", valeur))
+    with pytest.raises(ErreurAdmin, match="Marge invalide"):
+        proposer_modifications("marge par défaut", "test:admin", session)
+    assert get_parametre("marge_defaut", session) == 0.25
+
+
+@pytest.mark.parametrize("valeur", ["25 %", "0,25", "abc"])
+def test_marge_defaut_non_numerique_refusee(monkeypatch, session, valeur):
+    _bouchon_modele(monkeypatch, _maj("parametres", "marge_defaut", "valeur", valeur))
+    with pytest.raises(ErreurAdmin, match="Marge invalide"):
+        proposer_modifications("marge par défaut à 25 %", "test:admin", session)
+    assert get_parametre("marge_defaut", session) == 0.25
+
+
+@pytest.mark.parametrize("valeur", [1.0, 25, -0.01, "25 %", "0,18"])
+def test_marge_client_hors_bornes_refusee_a_la_proposition(monkeypatch, session, valeur):
+    _bouchon_modele(monkeypatch, _maj("clients", "CLI001", "marge_specifique", valeur))
+    with pytest.raises(ErreurAdmin, match="Marge invalide"):
+        proposer_modifications("marge client", "test:admin", session)
+    assert session.get(Client, "CLI001").marge_specifique == 0.18
+
+
+def test_message_marge_invalide_lisible(monkeypatch, session):
+    _bouchon_modele(monkeypatch, _maj("clients", "CLI001", "marge_specifique", 25))
+    with pytest.raises(ErreurAdmin) as exc:
+        proposer_modifications("marge client à 25 %", "test:admin", session)
+    message = str(exc.value)
+    assert "clients.marge_specifique" in message
+    assert "CLI001" in message
+    assert "ex. 0.25 pour 25 %" in message
+
+
+def test_proposition_multi_lignes_une_marge_invalide_refusee(monkeypatch, session):
+    payload = _maj("matieres", "S235JR", "prix_eur_kg", 1.25)
+    payload["modifications"] += _maj("parametres", "marge_defaut", "valeur", "1.2")["modifications"]
+    _bouchon_modele(monkeypatch, payload)
+    with pytest.raises(ErreurAdmin, match="Marge invalide"):
+        proposer_modifications("prix et marge", "test:admin", session)
+    assert session.get(Matiere, "S235JR").prix_eur_kg == pytest.approx(1.10)
+
+
+@pytest.mark.parametrize("valeur", ["0", "0.999"])
+def test_marge_defaut_aux_bornes_acceptee(monkeypatch, session, valeur):
+    _bouchon_modele(monkeypatch, _maj("parametres", "marge_defaut", "valeur", valeur))
+    proposition = proposer_modifications("marge par défaut", "test:admin", session)
+    assert proposition.appliquer("direction", session) == 1
+    session.commit()
+    assert get_parametre("marge_defaut", session) == float(valeur)
+    assert len(historique(session, table_nom="parametres", ligne_id="marge_defaut")) == 1
+
+
+def test_marge_client_valide_acceptee(monkeypatch, session):
+    _bouchon_modele(monkeypatch, _maj("clients", "CLI001", "marge_specifique", 0.3))
+    proposition = proposer_modifications("marge CLI001 à 30 %", "test:admin", session)
+    proposition.appliquer("direction", session)
+    session.commit()
+    assert session.get(Client, "CLI001").marge_specifique == 0.3
+    audit = historique(session, table_nom="clients", ligne_id="CLI001")
+    assert len(audit) == 1
+    assert audit[0].valeur_apres == "0.3"
+
+
+def test_marge_client_zero_acceptee(monkeypatch, session):
+    _bouchon_modele(monkeypatch, _maj("clients", "CLI001", "marge_specifique", 0.0))
+    proposition = proposer_modifications("marge CLI001 à 0", "test:admin", session)
+    assert len(proposition.modifications) == 1
+
+
+def test_appliquer_revalide_la_marge_sans_audit(session):
+    """Proposition construite hors ``proposer_modifications`` : refus avant écriture."""
+    proposition = PropositionAdmin(modifications=[ModificationAdmin(
+        type="mise_a_jour", table="clients", ligne_id="CLI001",
+        champ="marge_specifique", valeur=1.0, justification="test",
+    )])
+    with pytest.raises(ErreurAdmin, match="Marge invalide"):
+        proposition.appliquer("acheteur", session)
+    assert session.get(Client, "CLI001").marge_specifique == 0.18
+    assert historique(session) == []
+
+
+def test_clients_et_parametres_non_creables():
+    """Garde-fou : la branche création ne passe pas par ``_valider_marge``.
+
+    Si la création est un jour ouverte sur ces tables, brancher le contrôle
+    des marges dans la branche création avant de faire passer ce test.
+    """
+    assert not REFERENTIELS_MODIFIABLES["clients"].creation
+    assert not REFERENTIELS_MODIFIABLES["parametres"].creation
+
+
+def test_prompt_admin_enonce_la_borne_des_marges():
+    prompt = prompt_systeme_admin()
+    assert "marge_specifique" in prompt
+    assert "marge_defaut" in prompt
+    assert "0 ≤ marge < 1" in prompt

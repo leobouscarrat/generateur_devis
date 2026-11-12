@@ -32,7 +32,7 @@ from generateur_devis.data.acces import (
     list_matieres,
 )
 from generateur_devis.data.db import get_session
-from generateur_devis.devis import Devis, Modification, emettre
+from generateur_devis.devis import Devis, ErreurDevis, Modification, emettre
 from generateur_devis.extraction.correction import (
     ErreurCorrection,
     PropositionCorrection,
@@ -366,13 +366,13 @@ def _ecran_restitution() -> None:
             [
                 {
                     "quantite": p.quantite,
-                    "prix_unitaire_eur": float(
-                        formater_valeur("prix_unitaire_eur", p.prix_unitaire_eur)
+                    # Chaînes formatées : un float perdrait les zéros finaux
+                    # (st.dataframe afficherait « 71.6 », « 72 »), cf. #60.
+                    "prix_unitaire_eur": formater_valeur(
+                        "prix_unitaire_eur", p.prix_unitaire_eur
                     ),
-                    "prix_total_eur": float(
-                        formater_valeur(
-                            "prix_unitaire_eur", p.prix_unitaire_eur * p.quantite
-                        )
+                    "prix_total_eur": formater_valeur(
+                        "prix_unitaire_eur", p.prix_unitaire_eur * p.quantite
                     ),
                 }
                 for p in devis.chiffrage.paliers
@@ -385,17 +385,21 @@ def _ecran_restitution() -> None:
     # --- Marge (modifiable jusqu'à l'émission, rechiffrée depuis coûts figés) ---
     if not lecture_seule:
         with st.form("marge"):
+            # Pas de min_value/max_value : la marge administrée n'est pas bornée
+            # et la planterait ; la seule règle est Devis.changer_marge (#62).
             marge = st.number_input(
                 "Marge",
-                min_value=0.0,
-                max_value=0.95,
                 value=float(devis.marge),
                 step=0.01,
                 format="%.2f",
             )
             if st.form_submit_button("Appliquer la marge") and marge != devis.marge:
-                devis.changer_marge(devis.auteur or "inconnu", marge)
-                st.rerun()
+                try:
+                    devis.changer_marge(devis.auteur or "inconnu", marge)
+                except ErreurDevis as e:
+                    st.error(f"⛔ {e}")
+                else:
+                    st.rerun()
 
     # --- Vue interne : alertes (contrôles prix, comparaison historique) ----------
     # Recalculées depuis le Devis (pièce, flan, matière validés, marge courante),
@@ -474,6 +478,21 @@ def main() -> None:
 # ---------------------------------------------------------------------------
 
 
+def parser_quantites(saisie: str) -> list[int]:
+    """Paliers de quantité saisis au dépôt : entiers > 0, dédoublonnés, triés croissants.
+
+    Les segments vides sont ignorés (« 10,,20 » → [10, 20]).
+
+    Raises:
+        ValueError: aucun entier, segment non entier (« 1.5 », « a ») ou valeur ≤ 0.
+    """
+    quantites = [int(q.strip()) for q in saisie.split(",") if q.strip()]
+    if not quantites or any(q <= 0 for q in quantites):
+        msg = f"Quantités invalides : {saisie!r}."
+        raise ValueError(msg)
+    return sorted(set(quantites))
+
+
 def ecran_depot() -> ResultatDevis | None:
     """Écran 1 : dépôt du plan + contexte commercial + lancement du pipeline."""
     st.title("Nouveau devis — dépôt du plan")
@@ -496,11 +515,11 @@ def ecran_depot() -> ResultatDevis | None:
         saisie = st.text_input("Quantités (séparées par des virgules)", ", ".join(paliers))
         quantites: list[int] | None = None
         try:
-            quantites = [int(q.strip()) for q in saisie.split(",") if q.strip()]
-            if not quantites or any(q <= 0 for q in quantites):
-                raise ValueError
+            quantites = parser_quantites(saisie)
         except ValueError:
             st.error("Quantités invalides : entiers positifs séparés par des virgules.")
+        else:
+            st.caption(f"Paliers retenus : {', '.join(map(str, quantites))}")
     # Modèle d'extraction : paramètre administrable (agent 5.2), invisible ici ;
     # la variable d'environnement MODELE_EXTRACTION surcharge le paramètre.
     with get_session() as session:
@@ -522,14 +541,19 @@ def ecran_depot() -> ResultatDevis | None:
                 nom_modele,
                 session,
             )
-        st.session_state[CLE_RESULTAT] = resultat
-        st.session_state[CLE_CONTEXTE] = {
-            "client_id": client_id,
-            "quantites": quantites,
-            "nom_modele": nom_modele,
-            "matiere_id": matiere_id,  # choix du dépôt, None si « (à extraire) »
-        }
-        st.rerun()
+        if resultat.piece is None:
+            # Aucune pièce (fichier illisible, extraction impossible) : on reste
+            # sur le dépôt, formulaire complet, pour déposer un autre fichier.
+            st.error(resultat.erreur or "Aucune pièce extraite.")
+        else:
+            st.session_state[CLE_RESULTAT] = resultat
+            st.session_state[CLE_CONTEXTE] = {
+                "client_id": client_id,
+                "quantites": quantites,
+                "nom_modele": nom_modele,
+                "matiere_id": matiere_id,  # choix du dépôt, None si « (à extraire) »
+            }
+            st.rerun()
 
     return st.session_state.get(CLE_RESULTAT)
 
@@ -949,12 +973,14 @@ def ecran_validation() -> None:
                 st.table(
                     {
                         "Quantité": [p.quantite for p in resultat.chiffrage.paliers],
+                        # Chaînes formatées : un float reconverti perdrait l'arrondi
+                        # (st.table l'afficherait « 54.3600 », issue #60).
                         "Coût unitaire (€)": [
-                            float(formater_valeur("cout_unitaire_eur", p.cout_unitaire_eur))
+                            formater_valeur("cout_unitaire_eur", p.cout_unitaire_eur)
                             for p in resultat.chiffrage.paliers
                         ],
                         "Prix unitaire (€)": [
-                            float(formater_valeur("prix_unitaire_eur", p.prix_unitaire_eur))
+                            formater_valeur("prix_unitaire_eur", p.prix_unitaire_eur)
                             for p in resultat.chiffrage.paliers
                         ],
                     }
@@ -972,15 +998,12 @@ def ecran_validation() -> None:
                     [
                         {
                             "Bloc": ligne["bloc"],
-                            "Variable (€/pièce)": float(
-                                formater_valeur(
-                                    "cout_unitaire_eur", ligne["variable_eur_piece"]
-                                )
+                            # Chaînes formatées (2 décimales), cf. vue client.
+                            "Variable (€/pièce)": formater_valeur(
+                                "cout_unitaire_eur", ligne["variable_eur_piece"]
                             ),
-                            "Fixe (€/lot)": float(
-                                formater_valeur(
-                                    "cout_unitaire_eur", ligne["fixe_eur_lot"]
-                                )
+                            "Fixe (€/lot)": formater_valeur(
+                                "cout_unitaire_eur", ligne["fixe_eur_lot"]
                             ),
                             "Détail": ligne["detail"],
                         }
