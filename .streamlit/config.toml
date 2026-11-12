@@ -2,3 +2,9 @@
 # Pas de traceback dans le navigateur (chemins serveur, .venv) : la trace
 # complète reste dans la console du serveur (issue #63).
 showErrorDetails = "none"
+
+[runner]
+# Mode « magic » désactivé : une chaîne isolée du script (docstring
+# d'attribut…) ne doit jamais s'afficher à l'écran (issue #101). Les écrans
+# n'utilisent que des appels st.* explicites.
+magicEnabled = false
