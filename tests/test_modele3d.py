@@ -25,6 +25,7 @@ from generateur_devis.schema.piece import (
     Pli,
     ProfilPliage,
 )
+from generateur_devis.ui.rendu3d import MESSAGE_SANS_PROFIL, figure_modele_3d
 
 DENSITE_ACIER = 7.85
 FACTEUR_K = 0.40
@@ -196,3 +197,43 @@ def test_profil_incoherent_erreur_geometrie(elements):
     """Plus d'IndexError : un profil non alterné ou vide lève ErreurGeometrie."""
     with pytest.raises(ErreurGeometrie, match="incohérent"):
         construire_profil_2d(_piece(elements), FACTEUR_K)
+
+
+def test_cotes_contradictoires_aile_trop_courte_message_explicite():
+    """R = 50 : 22 − 2 × (104 − π/2 × 50,8)/2 ≈ −2,20 mm sur l'aile n°2."""
+    piece = piece_support()
+    assert piece.profil_pliage is not None
+    piece.profil_pliage.rayon_pliage_general = 50.0
+    with pytest.raises(ErreurGeometrie) as exc:
+        construire_modele_3d(piece, FACTEUR_K)
+    message = str(exc.value)
+    assert message.startswith("Cotes contradictoires")
+    assert "l'aile n°2 (22 mm)" in message
+    assert "épaisseur 2 mm, rayon 50 mm" in message
+    assert "-2.20 mm" in message
+    assert "Vérifiez l'aile, l'épaisseur et le rayon de pliage" in message
+
+
+def test_figure_modele_3d_piece_valide():
+    figure, message = figure_modele_3d(piece_support(), FACTEUR_K)
+    assert figure is not None
+    assert message is None
+
+
+def test_figure_modele_3d_donne_la_vraie_raison_de_l_echec():
+    piece = piece_support()
+    assert piece.profil_pliage is not None
+    piece.profil_pliage.rayon_pliage_general = 50.0
+    figure, message = figure_modele_3d(piece, FACTEUR_K)
+    assert figure is None
+    assert message is not None
+    assert message.startswith("Modèle 3D non représentable : Cotes contradictoires")
+    assert "aile n°2" in message
+    assert MESSAGE_SANS_PROFIL not in message
+
+
+def test_figure_modele_3d_sans_profil():
+    piece = piece_support()
+    piece.profil_pliage = None
+    assert figure_modele_3d(piece, FACTEUR_K) == (None, MESSAGE_SANS_PROFIL)
+    assert MESSAGE_SANS_PROFIL == "Pas de profil de pliage : modèle 3D non représenté en V1."

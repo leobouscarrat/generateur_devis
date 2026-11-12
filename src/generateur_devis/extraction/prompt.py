@@ -10,7 +10,10 @@ import json
 
 from generateur_devis.schema.export import json_schema
 
-VERSION_PROMPT = "v3"
+VERSION_PROMPT = "v4"
+
+ANOMALIE_DOCUMENT = "document"
+"""Valeur de ``Anomalie.champ`` qui signale un document non exploitable (règle 14)."""
 
 CONSIGNES = """\
 Tu es technicien méthodes dans un atelier de tôlerie. Tu lis un plan technique de pièce \
@@ -45,6 +48,11 @@ devant une cote de trou va dans « quantite », pas dans les dimensions.
 13. Rayons de pliage : une note générale (ex. « R2 UNLESS OTHERWISE SPECIFIED », \
 « BENDING RADIUS 2 mm ») va dans « rayon_pliage_general » ; un rayon coté sur un pli \
 précis va dans le « rayon_interieur » de ce pli.
+14. Si le document n'est pas un plan technique de pièce (devis, facture, courrier, photo \
+sans rapport) ou s'il est illisible dans son ensemble, ne remplis aucun champ : ajoute une \
+seule anomalie de type « illisible » avec « champ » = « document » et une description \
+courte de ce que tu vois. Une zone illisible sur un vrai plan reste une anomalie \
+ordinaire, avec le champ concerné.
 """
 
 
@@ -95,6 +103,9 @@ Règles :
    - "remplacement" : modifier un champ parmi cette liste FERMÉE (aucun autre chemin) :
      matiere.designation.valeur (texte, ex. "DC01"), matiere.epaisseur.valeur (nombre, mm),
      encombrement.largeur.valeur (nombre, mm), profil_pliage.rayon_pliage_general (nombre, mm) ;
+     "nouvelle_valeur" est une valeur SIMPLE du type indiqué : une chaîne pour un texte,
+     un nombre JSON pour une cote (2.5, jamais "2,5" ni "2.5"), jamais null, un objet
+     ou une liste ;
    - "ajout_element" : ajouter un élément à une liste de la fiche ; "chemin" vaut le
      nom de la liste (liste FERMÉE) et "nouvelle_valeur" est l'objet de l'élément :
        * "composants" : {"designation": ..., "type": ..., "filetage": ..., "quantite": ...}
@@ -126,7 +137,10 @@ Règles :
 courante : si « profil_pliage » vaut null, ne propose PAS \
 profil_pliage.rayon_pliage_general — utilise "creation_section" si le texte décrit \
 le profil complet (pli, angle, sens, ailes, cotation), sinon signale en "remarque" \
-ce qui manque. Même règle pour matiere et encombrement (non créables).
+ce qui manque. Même règle pour "modification_element" sur \
+profil_pliage.elements[...] (profil null → pas d'élément à corriger) et pour matiere \
+et encombrement (non créables). Un diff qui ne respecte pas ces règles fait rejeter \
+toute la proposition.
 5. Si le texte demande une suppression ou une modification hors de ces cas, ne la mets pas \
 dans le diff : signale-la dans une clé "remarque" à la racine.
 6. Si le texte est ambigu, propose ce que tu comprends et explique-le dans la justification.
@@ -184,6 +198,13 @@ dans une clé "remarque" à la racine.
 7. Marges (clients.marge_specifique, parametres clé marge_defaut) : fraction \
 décimale avec 0 ≤ marge < 1 (25 % → 0.25, jamais 25 ni « 25 % »). Une marge hors \
 de cet intervalle n'est pas mise dans le diff : signale-la dans « remarque ».
+8. L'index des lignes existantes est fourni avec la demande. Pour une \
+« mise_a_jour », retrouve le "ligne_id" à partir du vocabulaire métier (nuance, nom \
+de poste, désignation, clé de paramètre…) et utilise-le tel qu'écrit dans l'index. \
+N'invente jamais un identifiant absent de l'index : si aucune ligne ne correspond, \
+ou si plusieurs correspondent, ne propose rien pour cette demande et signale-le dans \
+« remarque ». Pour une « creation », la clé est nouvelle : elle ne doit pas déjà \
+figurer dans l'index (sinon, signale-le dans « remarque »).
 """
 
 
@@ -192,6 +213,10 @@ def prompt_systeme_admin() -> str:
     return CONSIGNES_ADMIN
 
 
-def prompt_utilisateur_admin(texte: str) -> str:
-    """Prompt utilisateur : l'instruction en texte libre."""
-    return f"Mise à jour demandée par l'administrateur :\n« {texte} »\n\nPropose le diff."
+def prompt_utilisateur_admin(texte: str, index: str) -> str:
+    """Prompt utilisateur : index des lignes existantes + instruction en texte libre."""
+    return (
+        "Lignes existantes des référentiels (chaque entrée commence par son ligne_id) :\n"
+        f"<<<\n{index}\n>>>\n\n"
+        f"Mise à jour demandée par l'administrateur :\n« {texte} »\n\nPropose le diff."
+    )

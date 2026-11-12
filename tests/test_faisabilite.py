@@ -12,8 +12,12 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from generateur_devis.data.seed import seed
-from generateur_devis.data.tables import Base
-from generateur_devis.faisabilite import Constat, evaluer_faisabilite
+from generateur_devis.data.tables import Base, Parametre
+from generateur_devis.faisabilite import (
+    Constat,
+    evaluer_faisabilite,
+    plus_courte_aile_adjacente,
+)
 from generateur_devis.geometrie import ErreurGeometrie
 from generateur_devis.schema.piece import (
     Aile,
@@ -162,3 +166,96 @@ def test_constats_cumules(session):
     constats = evaluer_faisabilite(piece, MATIERE, session)
     attendu = {"epaisseur_dispo": "blocage", "diam_trou_min": "alerte"}
     assert regles(constats) == attendu
+
+
+# --- Rayon de pliage aberrant (issue #66) --------------------------------------
+# Seuils seedés : regle_rayon_max_e = 8 (× e) → alerte ; regle_rayon_max_aile = 1
+# (× plus courte aile adjacente) → blocage. piece_conforme : ailes 40/30/20, e = 2.
+
+
+def _constats_regle(constats: list[Constat], regle: str) -> list[Constat]:
+    return [c for c in constats if c.regle == regle]
+
+
+def test_rayon_grand_devant_epaisseur_alerte_seule(session):
+    """R = 18 : 18 > 8 × 2 = 16 → alerte ; 18 ≤ 20 (plus courte aile) → pas de blocage."""
+    piece = piece_conforme()
+    assert piece.profil_pliage is not None
+    piece.profil_pliage.rayon_pliage_general = 18.0
+    assert regles(evaluer_faisabilite(piece, MATIERE, session)) == {"rayon_max": "alerte"}
+
+
+def test_rayon_plus_grand_que_aile_adjacente_blocage(session):
+    """R = 25 : alerte (> 16) et blocage sur le 2e pli seul (ailes 30/20 → 25 > 20)."""
+    piece = piece_conforme()
+    assert piece.profil_pliage is not None
+    piece.profil_pliage.rayon_pliage_general = 25.0
+    # Le flan reste constructible : 90 − 2 × (54 − π/2 × 25,8) ≈ 63 mm > 0.
+    constats = evaluer_faisabilite(piece, MATIERE, session)
+    assert regles(constats) == {"rayon_max": "alerte", "rayon_aile": "blocage"}
+    bloquants = _constats_regle(constats, "rayon_aile")
+    assert [c.champ for c in bloquants] == ["profil_pliage.elements[3]"]
+    assert "25 mm" in bloquants[0].message
+    assert "20 mm" in bloquants[0].message
+    # Une alerte par pli au-dessus de 8 × e.
+    assert [c.champ for c in _constats_regle(constats, "rayon_max")] == [
+        "profil_pliage.elements[1]",
+        "profil_pliage.elements[3]",
+    ]
+
+
+def test_rayon_du_pli_prime_sur_rayon_general(session):
+    """Rayon 25 sur le 2e pli seul (ailes 30/20) → blocage ; sur le 1er (40/30) → non."""
+    piece = piece_conforme()
+    assert piece.profil_pliage is not None
+    piece.profil_pliage.elements[3] = Pli(angle=90.0, sens="bas", rayon_interieur=25.0)
+    constats = evaluer_faisabilite(piece, MATIERE, session)
+    assert [c.champ for c in _constats_regle(constats, "rayon_aile")] == [
+        "profil_pliage.elements[3]"
+    ]
+    assert [c.champ for c in _constats_regle(constats, "rayon_max")] == [
+        "profil_pliage.elements[3]"
+    ]
+
+    piece = piece_conforme()
+    assert piece.profil_pliage is not None
+    piece.profil_pliage.elements[1] = Pli(angle=90.0, sens="haut", rayon_interieur=25.0)
+    constats = evaluer_faisabilite(piece, MATIERE, session)
+    assert _constats_regle(constats, "rayon_aile") == []
+    assert regles(constats) == {"rayon_max": "alerte"}
+
+
+def test_rayon_egal_aux_seuils_aucun_constat(session):
+    """Inégalités strictes : R = 16 (= 8 × e) et R = 20 (= aile) ne déclenchent rien."""
+    piece = piece_conforme()
+    assert piece.profil_pliage is not None
+    piece.profil_pliage.rayon_pliage_general = 16.0
+    assert evaluer_faisabilite(piece, MATIERE, session) == []
+    piece.profil_pliage.elements[3] = Pli(angle=90.0, sens="bas", rayon_interieur=20.0)
+    assert _constats_regle(evaluer_faisabilite(piece, MATIERE, session), "rayon_aile") == []
+
+
+def test_seuils_rayon_administrables(session):
+    piece = piece_conforme()
+    assert piece.profil_pliage is not None
+    piece.profil_pliage.rayon_pliage_general = 25.0
+    session.merge(Parametre(cle="regle_rayon_max_aile", valeur="2.0"))
+    session.flush()
+    # 25 ≤ 2 × 20 : plus de blocage.
+    assert regles(evaluer_faisabilite(piece, MATIERE, session)) == {"rayon_max": "alerte"}
+    session.merge(Parametre(cle="regle_rayon_max_e", valeur="20.0"))
+    session.flush()
+    # 25 ≤ 20 × 2 = 40 : plus d'alerte.
+    assert evaluer_faisabilite(piece, MATIERE, session) == []
+
+
+def test_plus_courte_aile_adjacente_ignore_les_voisins_non_aile():
+    """Profil non alterné : seuls les voisins de type Aile comptent, jamais d'IndexError."""
+    elements = [Aile(longueur=42.0), Pli(angle=90.0), Pli(angle=90.0), Aile(longueur=18.0)]
+    assert plus_courte_aile_adjacente(elements, 1) == 42.0
+    assert plus_courte_aile_adjacente(elements, 2) == 18.0
+    assert plus_courte_aile_adjacente([Pli(angle=90.0)], 0) is None
+    profil_z = piece_conforme().profil_pliage
+    assert profil_z is not None
+    assert plus_courte_aile_adjacente(profil_z.elements, 1) == 30.0
+    assert plus_courte_aile_adjacente(profil_z.elements, 3) == 20.0

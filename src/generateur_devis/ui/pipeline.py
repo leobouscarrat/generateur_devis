@@ -13,8 +13,14 @@ Conventions :
 - matière absente du plan (et non fournie) → résultat **partiel sans
   chiffrage**, à compléter à la validation (4.3) ;
 - blocage faisabilité → chiffrage non calculé (les constats suffisent) ;
+- document que l'IA signale comme non exploitable (règle 14 du prompt :
+  devis, facture, page sans rapport) → aucune pièce, l'écran reste sur le
+  dépôt (issue #64) ;
 - plan coté en pouces → pièce convertie en mm juste après l'extraction,
   conversion tracée dans ``ResultatDevis.conversion`` (issue #57) ;
+- ``memoire`` (dict partagé du serveur) : un plan déjà extrait avec succès
+  par le même modèle est repris sans appel IA, ``extraction_reprise=True``
+  (issue #68) ; rien n'est écrit sur disque ;
 - composants non chiffrés ici : leur référence n'est pas extraite du plan
   (tranché en 3.2) ; ils sont rattachés au référentiel à l'écran de
   validation, qui les transmet à ``rechiffrer(..., composants=...)`` (#56).
@@ -23,6 +29,7 @@ Conventions :
 from __future__ import annotations
 
 import tempfile
+from collections.abc import MutableMapping
 from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict
@@ -31,11 +38,12 @@ from sqlalchemy.orm import Session
 from generateur_devis.calcul_prix import Chiffrage, ErreurChiffrage, chiffrer
 from generateur_devis.controles_prix import evaluer_controles_prix
 from generateur_devis.data.acces import get_matiere, get_parametre
-from generateur_devis.extraction import charger_plan, extraire
+from generateur_devis.extraction import ResultatExtraction, charger_plan, extraire
+from generateur_devis.extraction.prompt import ANOMALIE_DOCUMENT
 from generateur_devis.faisabilite import Constat, evaluer_faisabilite
 from generateur_devis.geometrie import ErreurGeometrie, Flan, construire_flan
 from generateur_devis.llm import creer_modele
-from generateur_devis.schema.piece import PieceExtraite
+from generateur_devis.schema.piece import Anomalie, PieceExtraite
 from generateur_devis.unites import ConversionUnites, convertir_en_mm
 
 
@@ -61,6 +69,9 @@ class ResultatDevis(BaseModel):
     conversion: ConversionUnites | None = None
     """Unité d'origine et valeurs converties en mm (issue #57) ; None si l'extraction
     a échoué ou depuis ``rechiffrer`` (la pièce y est déjà en mm)."""
+    extraction_reprise: bool = False
+    """Extraction reprise de la mémoire du serveur (même plan, même modèle) : aucun
+    appel IA (issue #68)."""
 
     @property
     def bloque(self) -> bool:
@@ -80,6 +91,19 @@ def _resoudre_matiere(piece: PieceExtraite, matiere_id: str | None, session: Ses
     return None
 
 
+def anomalie_document(piece: PieceExtraite) -> Anomalie | None:
+    """Première anomalie « document non exploitable » signalée par l'IA (règle 14), sinon None.
+
+    Critère : ``type == "illisible"`` et ``champ == ANOMALIE_DOCUMENT``. Une
+    anomalie « illisible » sur un autre champ (ou ``champ=None``) ne rejette
+    pas le plan.
+    """
+    return next(
+        (a for a in piece.anomalies if a.type == "illisible" and a.champ == ANOMALIE_DOCUMENT),
+        None,
+    )
+
+
 def orchestrer_devis(
     plan: bytes,
     nom_fichier: str,
@@ -88,6 +112,7 @@ def orchestrer_devis(
     matiere_id: str | None,
     nom_modele: str,
     session: Session,
+    memoire: MutableMapping[str, ResultatExtraction] | None = None,
 ) -> ResultatDevis:
     """Exécute le parcours extraction → chiffrage provisoire sur un plan.
 
@@ -100,6 +125,8 @@ def orchestrer_devis(
         matiere_id: matière choisie ; sinon résolue depuis le plan.
         nom_modele: désignation du modèle d'extraction (``llm.creer_modele``).
         session: session SQLAlchemy sur la base de référence.
+        memoire: extractions réussies déjà faites (``extraire(memoire=...)``) ;
+            None = toujours un appel IA.
 
     Returns:
         Le `ResultatDevis`, complet ou partiel (voir docstring du module).
@@ -116,26 +143,37 @@ def orchestrer_devis(
     except ValueError as e:
         return ResultatDevis(erreur=str(e))
 
-    extraction = extraire(document, creer_modele(nom_modele))
+    extraction = extraire(document, creer_modele(nom_modele), memoire=memoire)
     if extraction.erreur is not None or extraction.piece is None:
         return ResultatDevis(
             erreur=f"Extraction impossible : {extraction.erreur or 'aucune pièce extraite.'}"
         )
+    # Document qui n'est pas un plan (devis, facture…) : refus avant matière et
+    # conversion, même si une matière est choisie au dépôt (issue #64).
+    anomalie = anomalie_document(extraction.piece)
+    if anomalie is not None:
+        return ResultatDevis(
+            erreur=(
+                f"Ce document n'est pas un plan exploitable : {anomalie.description} "
+                "Déposez le plan de la pièce (PDF ou image)."
+            )
+        )
     # Plan en pouces → mm, ici et pas dans extraire() : l'évaluation compare la
     # sortie brute, dans l'unité du plan (issue #57). Avant matière, géométrie,
     # faisabilité et chiffrage, qui travaillent tous en mm.
+    # La pièce servie est une copie : l'entrée en mémoire reste dans l'unité du plan.
     piece, conversion = convertir_en_mm(extraction.piece)
+    suite = {"conversion": conversion, "extraction_reprise": extraction.depuis_cache}
 
     try:
         matiere = _resoudre_matiere(piece, matiere_id, session)
     except ErreurPipeline as e:
-        return ResultatDevis(piece=piece, erreur=str(e), conversion=conversion)
+        return ResultatDevis(piece=piece, erreur=str(e), **suite)
     if matiere is None:
-        return ResultatDevis(piece=piece, matiere_id=None, erreur=None, conversion=conversion)
+        return ResultatDevis(piece=piece, matiere_id=None, erreur=None, **suite)
 
     resultat = rechiffrer(piece, matiere, client_id, quantites, session)
-    resultat.conversion = conversion
-    return resultat
+    return resultat.model_copy(update=suite)
 
 
 def rechiffrer(

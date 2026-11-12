@@ -82,3 +82,91 @@ def test_cache_evite_un_second_appel(tmp_path):
 def test_executable_claude_depuis_env(monkeypatch):
     monkeypatch.setenv("CLAUDE_BIN", "/chemin/vers/claude")
     assert trouver_executable() == "/chemin/vers/claude"
+
+
+# --- Mémoire des extractions réussies (issue #68) ----------------------------
+
+
+def test_memoire_evite_un_second_appel():
+    memoire = {}
+    premiere = extraire(PLAN, ModeleFactice([EXEMPLE]), memoire=memoire)
+    assert premiere.piece is not None and premiere.depuis_cache is False
+    assert len(memoire) == 1
+
+    modele = ModeleFactice([])  # aucun appel possible : pop sur liste vide lèverait
+    seconde = extraire(PLAN, modele, memoire=memoire)
+    assert modele.appels == []
+    assert seconde.depuis_cache is True
+    assert seconde.piece == premiere.piece
+    assert seconde.piece is not premiere.piece  # copie profonde servie
+
+
+def test_memoire_copie_profonde_entree_intacte():
+    """Muter la pièce servie (conversion, corrections) n'altère pas l'entrée mémorisée."""
+    memoire = {}
+    extraire(PLAN, ModeleFactice([EXEMPLE]), memoire=memoire)
+    servie = extraire(PLAN, ModeleFactice([]), memoire=memoire)
+    epaisseur = servie.piece.matiere.epaisseur.valeur
+    servie.piece.matiere.epaisseur.valeur = 999.0
+    servie.piece.contours.trous.clear()
+
+    relue = extraire(PLAN, ModeleFactice([]), memoire=memoire)
+    assert relue.piece.matiere.epaisseur.valeur == epaisseur
+    assert relue.piece.contours.trous != []
+
+
+def test_memoire_ignore_les_echecs():
+    memoire = {}
+    erreur = extraire(PLAN, ModeleFactice([ErreurModele("quota dépassé")]), memoire=memoire)
+    assert erreur.piece is None
+    invalide = extraire(PLAN, ModeleFactice(["pas de json", "toujours pas"]), memoire=memoire)
+    assert invalide.piece is None
+    assert memoire == {}
+
+    modele = ModeleFactice([EXEMPLE])
+    reprise = extraire(PLAN, modele, memoire=memoire)
+    assert len(modele.appels) == 1
+    assert reprise.piece is not None and reprise.depuis_cache is False
+
+
+def test_memoire_cle_par_modele():
+    memoire = {}
+    extraire(PLAN, ModeleFactice([EXEMPLE]), memoire=memoire)
+    autre = ModeleFactice([EXEMPLE], nom="autre:modele")
+    resultat = extraire(PLAN, autre, memoire=memoire)
+    assert len(autre.appels) == 1
+    assert resultat.depuis_cache is False
+    assert len(memoire) == 2
+
+
+def test_memoire_cle_identique_au_cache_disque():
+    from generateur_devis.extraction.extracteur import cle_cache
+
+    memoire = {}
+    extraire(PLAN, ModeleFactice([EXEMPLE]), memoire=memoire)
+    assert list(memoire) == [cle_cache("factice:test", PLAN, 2)]
+
+
+def test_sans_memoire_comportement_inchange():
+    premier = ModeleFactice([EXEMPLE])
+    second = ModeleFactice([EXEMPLE])
+    extraire(PLAN, premier)
+    resultat = extraire(PLAN, second)
+    assert len(premier.appels) == 1 and len(second.appels) == 1
+    assert resultat.depuis_cache is False
+
+
+def test_prompt_regle_document_non_exploitable():
+    """Règle 14 (#64) : la convention « champ = document » est énoncée dans le prompt,
+    avec la valeur partagée par le pipeline, et la version du prompt change."""
+    from generateur_devis.extraction.prompt import (
+        ANOMALIE_DOCUMENT,
+        VERSION_PROMPT,
+        prompt_systeme,
+    )
+
+    assert ANOMALIE_DOCUMENT == "document"
+    assert VERSION_PROMPT == "v4"
+    systeme = prompt_systeme()
+    assert "14. Si le document n'est pas un plan technique de pièce" in systeme
+    assert f"« champ » = « {ANOMALIE_DOCUMENT} »" in systeme

@@ -104,10 +104,13 @@ def construire_profil_2d(piece: PieceExtraite, facteur_k: float) -> list[Point2D
         if i < len(plis):
             longueur += correction(i)
         if longueur <= 0:
+            adjacents = [rayons[j] for j in (i - 1, i) if 0 <= j < len(plis)]
+            rayons_txt = ", ".join(f"{r:g}" for r in dict.fromkeys(adjacents))
             msg = (
-                f"Cotes contradictoires : segment {i} de longueur négative ou nulle "
-                f"({formater_valeur('longueur_mm', longueur)} mm) "
-                f"après correction des plis."
+                f"Cotes contradictoires : l'aile n°{i + 1} ({aile.longueur:g} mm) est "
+                f"trop courte pour ses plis (épaisseur {epaisseur:g} mm, rayon "
+                f"{rayons_txt} mm) : il reste {formater_valeur('longueur_mm', longueur)} mm. "
+                "Vérifiez l'aile, l'épaisseur et le rayon de pliage."
             )
             raise ErreurGeometrie(msg)
         longueurs.append(longueur)

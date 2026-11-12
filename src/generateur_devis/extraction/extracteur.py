@@ -4,12 +4,15 @@
   reçoit les erreurs et peut corriger sa réponse (une fois par défaut).
 - Chaque réponse est mise en cache sur disque : un même plan, avec le même modèle et la même
   version du prompt, n'est jamais redemandé (on ne paie pas deux fois).
+- L'application n'utilise pas le disque (§11) mais une mémoire du serveur, de même clé, qui
+  ne garde que les extractions réussies (issue #68).
 """
 
 import hashlib
 import json
 import re
-from dataclasses import asdict, dataclass, field
+from collections.abc import MutableMapping
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 
 from pydantic import ValidationError
@@ -104,12 +107,30 @@ def extraire(
     modele: ModeleVision,
     tentatives: int = 2,
     dossier_cache: Path | None = None,
+    memoire: MutableMapping[str, ResultatExtraction] | None = None,
 ) -> ResultatExtraction:
+    """Extrait la pièce d'un plan avec ``modele``.
+
+    dossier_cache : cache disque de l'étude (réponses et échecs de validation).
+    memoire : cache en mémoire (même clé que le disque, ``cle_cache``). Seules les
+    extractions RÉUSSIES (piece non None) y sont rangées : un échec (quota, JSON
+    invalide après toutes les tentatives) reste réessayable. Un résultat servi depuis
+    la mémoire porte ``depuis_cache=True`` et une copie profonde de la pièce : une
+    transformation en aval (conversion d'unités, corrections) ne touche pas l'entrée.
+    """
+    cle = None
+    if dossier_cache is not None or memoire is not None:
+        cle = cle_cache(modele.nom, plan, tentatives)
+    if memoire is not None and cle in memoire:
+        return _copie(memoire[cle])
+
     chemin_cache = None
     if dossier_cache is not None:
-        chemin_cache = dossier_cache / f"{cle_cache(modele.nom, plan, tentatives)}.json"
+        chemin_cache = dossier_cache / f"{cle}.json"
         en_cache = _lire_cache(chemin_cache)
         if en_cache is not None:
+            if memoire is not None and en_cache.piece is not None:
+                memoire[cle] = _copie(en_cache)
             return en_cache
 
     resultat = ResultatExtraction(modele.nom, VERSION_PROMPT, None, None)
@@ -132,4 +153,18 @@ def extraire(
 
     if chemin_cache is not None:
         _ecrire_cache(chemin_cache, resultat)
+    if memoire is not None and resultat.piece is not None:
+        memoire[cle] = _copie(resultat)
     return resultat
+
+
+def _copie(resultat: ResultatExtraction) -> ResultatExtraction:
+    """Copie servie depuis (ou rangée en) mémoire : pièce et listes copiées."""
+    assert resultat.piece is not None
+    return replace(
+        resultat,
+        piece=resultat.piece.model_copy(deep=True),
+        problemes=list(resultat.problemes),
+        reponses=list(resultat.reponses),
+        depuis_cache=True,
+    )

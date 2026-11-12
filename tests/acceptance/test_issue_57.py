@@ -125,7 +125,7 @@ def test_extraction_et_prompt_non_touches():
 
     assert "convertir_en_mm" not in inspect.getsource(extracteur)
     assert "unites" not in inspect.getsource(extracteur.extraire)
-    assert VERSION_PROMPT == "v3"
+    assert VERSION_PROMPT == "v4"  # v3 sous #57, bump par la règle 14 de #64
 
 
 # --- 2. Écran de validation --------------------------------------------------------

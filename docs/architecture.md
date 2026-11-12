@@ -160,6 +160,8 @@ Limite V1 : pièces dont **tous les plis sont parallèles** (supports, pattes, p
 | Distance trou / pli ≥ 2 × épaisseur + rayon | 2 × e + R |
 | Longueur d'aile ≥ minimum de l'outillage | 4 × e |
 | Rayon de pliage ≥ épaisseur | 1,0 × e (plus pour certains aluminiums) |
+| Rayon de pliage ≤ k × épaisseur | 8 × e (alerte : outillage spécial) |
+| Rayon de pliage ≤ aile adjacente | 1 × aile (blocage) |
 | Dimensions du flan ≤ format de tôle et longueur de plieuse | selon `postes` |
 | Épaisseur disponible pour la matière | selon `epaisseurs_dispo` |
 | Traitement compatible avec la matière | galva → acier, anodisation → alu, passivation → inox |
@@ -635,7 +637,7 @@ Le code de l'étude et celui de l'application vivent dans le même dépôt, mais
 | **Étude** — `src/etude_extraction/` | Générateur de plans, dégradations, chargement des jeux, comparaison, synthèse, cache des réponses | Étude seulement |
 
 - Les **dépendances** sont séparées : celles de l'étude (matplotlib, pyarrow, shapely…) sont dans un groupe `etude` du `pyproject.toml` ; l'application s'installe et fonctionne sans elles.
-- Le **cache des réponses** (`results/cache/`) appartient à l'étude : l'extraction de l'application ne garde aucune réponse sur disque par défaut, conformément aux règles de conservation ([section 11](#11-traçabilité-et-confidentialité)).
+- Le **cache des réponses** (`results/cache/`) appartient à l'étude : l'extraction de l'application ne garde aucune réponse sur disque par défaut, conformément aux règles de conservation ([section 11](#11-traçabilité-et-confidentialité)). Les extractions réussies sont gardées en mémoire du serveur jusqu'à son redémarrage (même clé que le cache de l'étude) : un plan redéposé après un rechargement de page est repris sans nouvel appel IA.
 - L'adaptateur **Claude Code** (abonnement) reste dans `llm`, mais ne sert qu'à l'étude ([9.2](#92-adaptateur-de-fournisseur)).
 
 Garder le même dépôt permet de relancer l'évaluation à chaque modification du prompt ou du format, sur la version exacte du code de l'application (test de non-régression).
