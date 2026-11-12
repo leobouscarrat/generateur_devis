@@ -473,6 +473,21 @@ def main() -> None:
 # ---------------------------------------------------------------------------
 
 
+def parser_quantites(saisie: str) -> list[int]:
+    """Paliers de quantité saisis au dépôt : entiers > 0, dédoublonnés, triés croissants.
+
+    Les segments vides sont ignorés (« 10,,20 » → [10, 20]).
+
+    Raises:
+        ValueError: aucun entier, segment non entier (« 1.5 », « a ») ou valeur ≤ 0.
+    """
+    quantites = [int(q.strip()) for q in saisie.split(",") if q.strip()]
+    if not quantites or any(q <= 0 for q in quantites):
+        msg = f"Quantités invalides : {saisie!r}."
+        raise ValueError(msg)
+    return sorted(set(quantites))
+
+
 def ecran_depot() -> ResultatDevis | None:
     """Écran 1 : dépôt du plan + contexte commercial + lancement du pipeline."""
     st.title("Nouveau devis — dépôt du plan")
@@ -495,11 +510,11 @@ def ecran_depot() -> ResultatDevis | None:
         saisie = st.text_input("Quantités (séparées par des virgules)", ", ".join(paliers))
         quantites: list[int] | None = None
         try:
-            quantites = [int(q.strip()) for q in saisie.split(",") if q.strip()]
-            if not quantites or any(q <= 0 for q in quantites):
-                raise ValueError
+            quantites = parser_quantites(saisie)
         except ValueError:
             st.error("Quantités invalides : entiers positifs séparés par des virgules.")
+        else:
+            st.caption(f"Paliers retenus : {', '.join(map(str, quantites))}")
     # Modèle d'extraction : paramètre administrable (agent 5.2), invisible ici ;
     # la variable d'environnement MODELE_EXTRACTION surcharge le paramètre.
     with get_session() as session:
@@ -948,12 +963,14 @@ def ecran_validation() -> None:
                 st.table(
                     {
                         "Quantité": [p.quantite for p in resultat.chiffrage.paliers],
+                        # Chaînes formatées : un float reconverti perdrait l'arrondi
+                        # (st.table l'afficherait « 54.3600 », issue #60).
                         "Coût unitaire (€)": [
-                            float(formater_valeur("cout_unitaire_eur", p.cout_unitaire_eur))
+                            formater_valeur("cout_unitaire_eur", p.cout_unitaire_eur)
                             for p in resultat.chiffrage.paliers
                         ],
                         "Prix unitaire (€)": [
-                            float(formater_valeur("prix_unitaire_eur", p.prix_unitaire_eur))
+                            formater_valeur("prix_unitaire_eur", p.prix_unitaire_eur)
                             for p in resultat.chiffrage.paliers
                         ],
                     }
