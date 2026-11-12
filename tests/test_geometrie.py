@@ -18,8 +18,10 @@ from generateur_devis.geometrie import (
     calculer_ba,
     calculer_bd,
     construire_flan,
+    longueur_developpee,
     perimetre_polygone,
     perimetre_trou,
+    verifier_alternance,
 )
 from generateur_devis.schema.piece import (
     Aile,
@@ -249,3 +251,35 @@ def test_cotes_contradictoires_erreur():
 def test_densite_invalide_erreur():
     with pytest.raises(ErreurGeometrie, match="Densité invalide"):
         construire_flan(piece_support(), 0.0, FACTEUR_K)
+
+
+# --- Alternance aile / pli (issue #65) ----------------------------------------
+
+
+def _piece_profil(elements: list) -> PieceExtraite:
+    return PieceExtraite(
+        matiere=Matiere(epaisseur=Champ[float](valeur=2.0)),
+        encombrement=Encombrement(largeur=Champ[float](valeur=60.0)),
+        profil_pliage=ProfilPliage(
+            cotation="exterieure", rayon_pliage_general=2.0, elements=elements
+        ),
+    )
+
+
+PROFILS_INCOHERENTS = {
+    "pli supprimé": [Aile(longueur=42.0), Aile(longueur=22.0), Pli(angle=90.0), Aile(longueur=18.0)],
+    "vide": [],
+    "finit par un pli": [Aile(longueur=42.0), Pli(angle=90.0)],
+    "commence par un pli": [Pli(angle=90.0), Aile(longueur=42.0)],
+}
+
+
+@pytest.mark.parametrize("elements", PROFILS_INCOHERENTS.values(), ids=PROFILS_INCOHERENTS.keys())
+def test_longueur_developpee_profil_incoherent(elements):
+    with pytest.raises(ErreurGeometrie, match="incohérent"):
+        longueur_developpee(_piece_profil(elements), FACTEUR_K)
+
+
+def test_verifier_alternance_profils_valides():
+    verifier_alternance(piece_support().profil_pliage)
+    verifier_alternance(ProfilPliage(elements=[Aile(longueur=75.0)]))
