@@ -340,7 +340,9 @@ LIBELLES_ANOMALIE: dict[str, str] = {
     "illisible": "Illisible",
     "autre": "Autre",
 }
-"""Libellé affiché de chaque ``Anomalie.type`` (couvre exactement le schéma)."""
+# Libellé affiché de chaque ``Anomalie.type`` (couvre exactement le schéma).
+# Commentaire et non docstring : une chaîne isolée au niveau du module serait
+# affichée à l'écran par le mode « magic » de Streamlit (#101).
 
 
 def lignes_anomalies(piece: PieceExtraite) -> list[str]:
