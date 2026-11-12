@@ -317,6 +317,24 @@ def _ecran_assistant(piece: PieceExtraite) -> None:
                 st.rerun()
 
 
+LIBELLES_ANOMALIE: dict[str, str] = {
+    "information_manquante": "Information manquante",
+    "incoherence": "Incohérence",
+    "illisible": "Illisible",
+    "autre": "Autre",
+}
+"""Libellé affiché de chaque ``Anomalie.type`` (couvre exactement le schéma)."""
+
+
+def lignes_anomalies(piece: PieceExtraite) -> list[str]:
+    """Anomalies signalées par l'IA, une ligne par anomalie, dans l'ordre d'extraction.
+
+    Format : ``"<libellé du type> : <description>"``. Le chemin technique
+    ``champ`` (ex. ``matiere.designation``) n'est pas affiché (jargon).
+    """
+    return [f"{LIBELLES_ANOMALIE[a.type]} : {a.description}" for a in piece.anomalies]
+
+
 def _champs_peu_surs(piece: PieceExtraite, session) -> list[str]:
     """Champs du parcours lus avec une confiance sous le seuil (anomalies en tête).
 
@@ -1094,6 +1112,10 @@ def ecran_validation() -> None:
     # La pièce corrigée par l'assistant (acceptations précédentes) fait foi.
     piece: PieceExtraite = st.session_state.get(CLE_PIECE_CORRIGEE) or piece_extraite
     contexte = st.session_state.get(CLE_CONTEXTE, {})
+    # Anomalies de la lecture d'origine (l'assistant ne les modifie pas), avant
+    # le formulaire : visibles même si la saisie est bloquée (issue #64).
+    for ligne in lignes_anomalies(piece_extraite):
+        st.warning(f"⚠️ Signalé à la lecture du plan — {ligne}")
 
     _ecran_assistant(piece)
 

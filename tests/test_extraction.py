@@ -82,3 +82,19 @@ def test_cache_evite_un_second_appel(tmp_path):
 def test_executable_claude_depuis_env(monkeypatch):
     monkeypatch.setenv("CLAUDE_BIN", "/chemin/vers/claude")
     assert trouver_executable() == "/chemin/vers/claude"
+
+
+def test_prompt_regle_document_non_exploitable():
+    """Règle 14 (#64) : la convention « champ = document » est énoncée dans le prompt,
+    avec la valeur partagée par le pipeline, et la version du prompt change."""
+    from generateur_devis.extraction.prompt import (
+        ANOMALIE_DOCUMENT,
+        VERSION_PROMPT,
+        prompt_systeme,
+    )
+
+    assert ANOMALIE_DOCUMENT == "document"
+    assert VERSION_PROMPT == "v4"
+    systeme = prompt_systeme()
+    assert "14. Si le document n'est pas un plan technique de pièce" in systeme
+    assert f"« champ » = « {ANOMALIE_DOCUMENT} »" in systeme

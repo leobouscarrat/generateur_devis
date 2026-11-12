@@ -16,6 +16,7 @@ from generateur_devis.data.tables import Base
 from generateur_devis.extraction import ResultatExtraction
 from generateur_devis.schema.piece import (
     Aile,
+    Anomalie,
     Champ,
     CoinCoupe,
     Contours,
@@ -28,7 +29,7 @@ from generateur_devis.schema.piece import (
     Unite,
 )
 from generateur_devis.ui import pipeline
-from generateur_devis.ui.pipeline import orchestrer_devis, rechiffrer
+from generateur_devis.ui.pipeline import anomalie_document, orchestrer_devis, rechiffrer
 
 MATIERE = "S235JR"
 
@@ -323,3 +324,70 @@ def test_pipeline_fichier_illisible_sans_appel_modele(monkeypatch, session, cont
     assert resultat.erreur == "Fichier illisible ou vide : déposez un PDF ou une image de plan."
     assert resultat.piece is None
     assert "/" not in resultat.erreur and "tmp" not in resultat.erreur
+
+
+# --- Document non exploitable signalé par l'IA (issue #64) -----------------------
+
+
+def _avec_anomalies(piece: PieceExtraite, *anomalies: Anomalie) -> PieceExtraite:
+    piece.anomalies = list(anomalies)
+    return piece
+
+
+DOCUMENT = Anomalie(type="illisible", champ="document", description="devis commercial")
+
+
+def test_anomalie_document_renvoyee():
+    piece = _avec_anomalies(piece_support(MATIERE), DOCUMENT)
+    assert anomalie_document(piece) == DOCUMENT
+
+
+def test_anomalie_document_premiere_seulement():
+    seconde = Anomalie(type="illisible", champ="document", description="facture")
+    piece = _avec_anomalies(piece_support(MATIERE), DOCUMENT, seconde)
+    assert anomalie_document(piece) == DOCUMENT
+
+
+@pytest.mark.parametrize(
+    "anomalie",
+    [
+        Anomalie(type="illisible", champ=None, description="tache sur le cartouche"),
+        Anomalie(type="illisible", champ="matiere.designation", description="matière floue"),
+        Anomalie(type="autre", champ="document", description="plan scanné de travers"),
+    ],
+)
+def test_anomalie_document_ignore_les_autres_anomalies(anomalie):
+    assert anomalie_document(_avec_anomalies(piece_support(MATIERE), anomalie)) is None
+
+
+def test_anomalie_document_sans_anomalie():
+    assert anomalie_document(piece_support(MATIERE)) is None
+
+
+@pytest.mark.parametrize("matiere_id", [None, MATIERE])
+def test_pipeline_document_non_plan_refuse(monkeypatch, session, matiere_id):
+    """Refus avant matière et géométrie, même avec une matière choisie au dépôt."""
+    _bouchon_extraction(monkeypatch, _avec_anomalies(piece_support(MATIERE), DOCUMENT))
+
+    resultat = orchestrer_devis(b"%PDF", "devis.pdf", None, None, matiere_id, "test:m", session)
+
+    assert resultat.piece is None
+    assert resultat.chiffrage is None
+    assert resultat.flan is None
+    assert resultat.erreur == (
+        "Ce document n'est pas un plan exploitable : devis commercial "
+        "Déposez le plan de la pièce (PDF ou image)."
+    )
+
+
+def test_pipeline_anomalie_illisible_ordinaire_chiffre(monkeypatch, session):
+    """Une zone illisible sur un vrai plan n'empêche pas le chiffrage."""
+    anomalie = Anomalie(type="illisible", champ="matiere.designation", description="floue")
+    _bouchon_extraction(monkeypatch, _avec_anomalies(piece_support(MATIERE), anomalie))
+
+    resultat = orchestrer_devis(b"%PDF", "plan.pdf", None, None, None, "test:m", session)
+
+    assert resultat.erreur is None
+    assert resultat.piece is not None
+    assert resultat.piece.anomalies == [anomalie]
+    assert resultat.chiffrage is not None

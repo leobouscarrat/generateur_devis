@@ -13,6 +13,9 @@ Conventions :
 - matière absente du plan (et non fournie) → résultat **partiel sans
   chiffrage**, à compléter à la validation (4.3) ;
 - blocage faisabilité → chiffrage non calculé (les constats suffisent) ;
+- document que l'IA signale comme non exploitable (règle 14 du prompt :
+  devis, facture, page sans rapport) → aucune pièce, l'écran reste sur le
+  dépôt (issue #64) ;
 - plan coté en pouces → pièce convertie en mm juste après l'extraction,
   conversion tracée dans ``ResultatDevis.conversion`` (issue #57) ;
 - composants non chiffrés ici : leur référence n'est pas extraite du plan
@@ -32,10 +35,11 @@ from generateur_devis.calcul_prix import Chiffrage, ErreurChiffrage, chiffrer
 from generateur_devis.controles_prix import evaluer_controles_prix
 from generateur_devis.data.acces import get_matiere, get_parametre
 from generateur_devis.extraction import charger_plan, extraire
+from generateur_devis.extraction.prompt import ANOMALIE_DOCUMENT
 from generateur_devis.faisabilite import Constat, evaluer_faisabilite
 from generateur_devis.geometrie import ErreurGeometrie, Flan, construire_flan
 from generateur_devis.llm import creer_modele
-from generateur_devis.schema.piece import PieceExtraite
+from generateur_devis.schema.piece import Anomalie, PieceExtraite
 from generateur_devis.unites import ConversionUnites, convertir_en_mm
 
 
@@ -80,6 +84,19 @@ def _resoudre_matiere(piece: PieceExtraite, matiere_id: str | None, session: Ses
     return None
 
 
+def anomalie_document(piece: PieceExtraite) -> Anomalie | None:
+    """Première anomalie « document non exploitable » signalée par l'IA (règle 14), sinon None.
+
+    Critère : ``type == "illisible"`` et ``champ == ANOMALIE_DOCUMENT``. Une
+    anomalie « illisible » sur un autre champ (ou ``champ=None``) ne rejette
+    pas le plan.
+    """
+    return next(
+        (a for a in piece.anomalies if a.type == "illisible" and a.champ == ANOMALIE_DOCUMENT),
+        None,
+    )
+
+
 def orchestrer_devis(
     plan: bytes,
     nom_fichier: str,
@@ -120,6 +137,16 @@ def orchestrer_devis(
     if extraction.erreur is not None or extraction.piece is None:
         return ResultatDevis(
             erreur=f"Extraction impossible : {extraction.erreur or 'aucune pièce extraite.'}"
+        )
+    # Document qui n'est pas un plan (devis, facture…) : refus avant matière et
+    # conversion, même si une matière est choisie au dépôt (issue #64).
+    anomalie = anomalie_document(extraction.piece)
+    if anomalie is not None:
+        return ResultatDevis(
+            erreur=(
+                f"Ce document n'est pas un plan exploitable : {anomalie.description} "
+                "Déposez le plan de la pièce (PDF ou image)."
+            )
         )
     # Plan en pouces → mm, ici et pas dans extraire() : l'évaluation compare la
     # sortie brute, dans l'unité du plan (issue #57). Avant matière, géométrie,

@@ -10,7 +10,10 @@ import json
 
 from generateur_devis.schema.export import json_schema
 
-VERSION_PROMPT = "v3"
+VERSION_PROMPT = "v4"
+
+ANOMALIE_DOCUMENT = "document"
+"""Valeur de ``Anomalie.champ`` qui signale un document non exploitable (règle 14)."""
 
 CONSIGNES = """\
 Tu es technicien méthodes dans un atelier de tôlerie. Tu lis un plan technique de pièce \
@@ -45,6 +48,11 @@ devant une cote de trou va dans « quantite », pas dans les dimensions.
 13. Rayons de pliage : une note générale (ex. « R2 UNLESS OTHERWISE SPECIFIED », \
 « BENDING RADIUS 2 mm ») va dans « rayon_pliage_general » ; un rayon coté sur un pli \
 précis va dans le « rayon_interieur » de ce pli.
+14. Si le document n'est pas un plan technique de pièce (devis, facture, courrier, photo \
+sans rapport) ou s'il est illisible dans son ensemble, ne remplis aucun champ : ajoute une \
+seule anomalie de type « illisible » avec « champ » = « document » et une description \
+courte de ce que tu vois. Une zone illisible sur un vrai plan reste une anomalie \
+ordinaire, avec le champ concerné.
 """
 
 
