@@ -642,3 +642,132 @@ def test_garde_fou_libelles_champs_couvrent_les_modeles_d_elements():
     for modele in modeles:
         manquants = set(modele.model_fields) - CHAMPS_MASQUES - set(LIBELLES_CHAMPS_ELEMENT)
         assert not manquants, (modele.__name__, manquants)
+
+
+# --- Issue #84 : diffs mal formés refusés proprement --------------------------
+
+DIFFS_MAL_FORMES = [
+    # Élément de profil alors que le profil est absent (TypeError sur main).
+    {"type": "modification_element", "chemin": "profil_pliage.elements[0]",
+     "nouvelle_valeur": {"sens": "haut"}},
+    # Désignation non scalaire ou mal typée (écrite telle quelle sur main).
+    {"type": "remplacement", "chemin": "matiere.designation.valeur",
+     "nouvelle_valeur": {"nuance": "DC01"}},
+    {"type": "remplacement", "chemin": "matiere.designation.valeur",
+     "nouvelle_valeur": ["DC01", "S235JR"]},
+    {"type": "remplacement", "chemin": "matiere.designation.valeur", "nouvelle_valeur": 304},
+    {"type": "remplacement", "chemin": "matiere.designation.valeur", "nouvelle_valeur": None},
+    # Cote mal typée : booléen, texte, entier démesuré (OverflowError sur main),
+    # non fini, objet, null.
+    {"type": "remplacement", "chemin": "matiere.epaisseur.valeur", "nouvelle_valeur": True},
+    {"type": "remplacement", "chemin": "matiere.epaisseur.valeur", "nouvelle_valeur": "2,5"},
+    {"type": "remplacement", "chemin": "matiere.epaisseur.valeur", "nouvelle_valeur": 10**400},
+    {"type": "remplacement", "chemin": "matiere.epaisseur.valeur",
+     "nouvelle_valeur": float("inf")},
+    {"type": "remplacement", "chemin": "encombrement.largeur.valeur",
+     "nouvelle_valeur": {"valeur": 60}},
+    {"type": "remplacement", "chemin": "matiere.epaisseur.valeur", "nouvelle_valeur": None},
+    {"type": "remplacement", "chemin": "profil_pliage.rayon_pliage_general",
+     "nouvelle_valeur": 2.0},
+    # Chemins absents, mal formés ou démesurés.
+    {"type": "remplacement", "chemin": None, "nouvelle_valeur": 2.0},
+    {"type": "modification_element", "chemin": None, "nouvelle_valeur": {"quantite": 2}},
+    {"type": "modification_element", "chemin": "contours.trous[99999999999999999999]",
+     "nouvelle_valeur": {"quantite": 2}},
+    {"type": "ajout_element", "chemin": None, "nouvelle_valeur": {"forme": "rond"}},
+    {"type": "creation_section", "chemin": None, "nouvelle_valeur": {}},
+    # Valeurs non-objet pour un élément ou une section.
+    {"type": "ajout_element", "chemin": "contours.trous", "nouvelle_valeur": "rond"},
+    {"type": "creation_section", "chemin": "profil_pliage", "nouvelle_valeur": [1, 2]},
+    {"type": "ajout_composant", "nouvelle_valeur": 4},
+    {"type": "modification_element", "chemin": "contours.trous[0]",
+     "nouvelle_valeur": {"diametre": {"valeur": 8}}},
+]
+
+
+@pytest.mark.parametrize("diff", DIFFS_MAL_FORMES, ids=lambda d: f"{d['type']}-{d.get('chemin')}")
+def test_diff_mal_forme_seulement_erreur_correction(monkeypatch, diff):
+    """Aucune exception autre que ErreurCorrection, à la proposition ET à
+    l'application ; l'avant/après ne lève jamais (#84)."""
+    piece = piece_support().model_copy(update={"profil_pliage": None})
+    proposition = PropositionCorrection.model_validate({"diffs": [diff]})
+    with pytest.raises(ErreurCorrection):
+        proposition.appliquer(piece)
+    assert len(proposition.ligne_avant_apres(piece)) == 1
+    # JSON brut de l'IA : NaN/Infinity non sérialisables, on passe un texte.
+    _bouchon_modele(monkeypatch, json.dumps({"diffs": [diff]}))
+    with pytest.raises(ErreurCorrection, match="inapplicable"):
+        proposer_correction(piece, "corrige", "test:correction")
+
+
+def test_modification_element_profil_absent_message_lisible():
+    piece = piece_support().model_copy(update={"profil_pliage": None})
+    proposition = PropositionCorrection(diffs=[DiffCorrection(
+        type="modification_element", chemin="profil_pliage.elements[1]",
+        nouvelle_valeur={"sens": "haut"},
+    )])
+    with pytest.raises(ErreurCorrection, match="section absente"):
+        proposition.appliquer(piece)
+
+
+def test_remplacement_designation_dict_refuse_sans_conversion():
+    proposition = PropositionCorrection(diffs=[DiffCorrection(
+        type="remplacement", chemin="matiere.designation.valeur",
+        nouvelle_valeur={"nuance": "DC01"},
+    )])
+    with pytest.raises(ErreurCorrection, match="Valeur incompatible pour Matière"):
+        proposition.appliquer(piece_support())
+
+
+def test_remplacement_entier_accepte_pour_une_cote():
+    """Le schéma (Champ[float]) accepte un entier JSON : 3 → 3.0."""
+    corrigee = PropositionCorrection(diffs=[DiffCorrection(
+        type="remplacement", chemin="matiere.epaisseur.valeur", nouvelle_valeur=3,
+    )]).appliquer(piece_support())
+    assert corrigee.matiere.epaisseur.valeur == 3.0
+    assert isinstance(corrigee.matiere.epaisseur.valeur, float)
+
+
+def test_appliquer_renvoie_la_piece_validee():
+    corrigee = PropositionCorrection(diffs=[DiffCorrection(
+        type="remplacement", chemin="matiere.designation.valeur", nouvelle_valeur="DC01",
+    )]).appliquer(piece_support())
+    assert corrigee.matiere.designation.valeur == "DC01"
+    assert PieceExtraite.model_validate(corrigee.model_dump()) == corrigee
+
+
+def test_proposition_valide_les_valeurs_avant_affichage(monkeypatch):
+    """La validation à la proposition contrôle aussi les valeurs, pas
+    seulement les chemins (règle : toute contrainte vérifiée à la proposition)."""
+    _bouchon_modele(monkeypatch, {"diffs": [
+        {"type": "ajout_element", "chemin": "contours.trous",
+         "nouvelle_valeur": {"forme": "rond", "quantite": 0}},
+    ]})
+    with pytest.raises(ErreurCorrection, match="inapplicable"):
+        proposer_correction(piece_support(), "ajoute un trou", "test:correction")
+
+
+def test_proposition_nom_de_modele_invalide():
+    with pytest.raises(ErreurCorrection, match="Assistant indisponible"):
+        proposer_correction(piece_support(), "corrige", "sans_fournisseur")
+
+
+def test_garde_fou_chemins_autorises_existent_dans_le_schema():
+    """Chaque chemin whitelisté désigne un champ du schéma Pydantic : c'est
+    lui qui donne le type attendu du remplacement."""
+    from typing import get_args
+
+    from pydantic import BaseModel
+
+    from generateur_devis.extraction.correction import CHEMINS_AUTORISES
+
+    for chemin in CHEMINS_AUTORISES:
+        modele: type = PieceExtraite
+        segments = chemin.split(".")
+        for segment in segments[:-1]:
+            annotation = modele.model_fields[segment].annotation
+            candidats = [annotation, *get_args(annotation)]
+            modele = next(
+                c for c in candidats if isinstance(c, type) and issubclass(c, BaseModel)
+            )
+        assert segments[-1] in modele.model_fields, chemin

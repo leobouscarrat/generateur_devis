@@ -95,6 +95,9 @@ Règles :
    - "remplacement" : modifier un champ parmi cette liste FERMÉE (aucun autre chemin) :
      matiere.designation.valeur (texte, ex. "DC01"), matiere.epaisseur.valeur (nombre, mm),
      encombrement.largeur.valeur (nombre, mm), profil_pliage.rayon_pliage_general (nombre, mm) ;
+     "nouvelle_valeur" est une valeur SIMPLE du type indiqué : une chaîne pour un texte,
+     un nombre JSON pour une cote (2.5, jamais "2,5" ni "2.5"), jamais null, un objet
+     ou une liste ;
    - "ajout_element" : ajouter un élément à une liste de la fiche ; "chemin" vaut le
      nom de la liste (liste FERMÉE) et "nouvelle_valeur" est l'objet de l'élément :
        * "composants" : {"designation": ..., "type": ..., "filetage": ..., "quantite": ...}
@@ -126,7 +129,10 @@ Règles :
 courante : si « profil_pliage » vaut null, ne propose PAS \
 profil_pliage.rayon_pliage_general — utilise "creation_section" si le texte décrit \
 le profil complet (pli, angle, sens, ailes, cotation), sinon signale en "remarque" \
-ce qui manque. Même règle pour matiere et encombrement (non créables).
+ce qui manque. Même règle pour "modification_element" sur \
+profil_pliage.elements[...] (profil null → pas d'élément à corriger) et pour matiere \
+et encombrement (non créables). Un diff qui ne respecte pas ces règles fait rejeter \
+toute la proposition.
 5. Si le texte demande une suppression ou une modification hors de ces cas, ne la mets pas \
 dans le diff : signale-la dans une clé "remarque" à la racine.
 6. Si le texte est ambigu, propose ce que tu comprends et explique-le dans la justification.
