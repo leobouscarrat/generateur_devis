@@ -154,3 +154,19 @@ def test_sans_memoire_comportement_inchange():
     resultat = extraire(PLAN, second)
     assert len(premier.appels) == 1 and len(second.appels) == 1
     assert resultat.depuis_cache is False
+
+
+def test_prompt_regle_document_non_exploitable():
+    """Règle 14 (#64) : la convention « champ = document » est énoncée dans le prompt,
+    avec la valeur partagée par le pipeline, et la version du prompt change."""
+    from generateur_devis.extraction.prompt import (
+        ANOMALIE_DOCUMENT,
+        VERSION_PROMPT,
+        prompt_systeme,
+    )
+
+    assert ANOMALIE_DOCUMENT == "document"
+    assert VERSION_PROMPT == "v4"
+    systeme = prompt_systeme()
+    assert "14. Si le document n'est pas un plan technique de pièce" in systeme
+    assert f"« champ » = « {ANOMALIE_DOCUMENT} »" in systeme
