@@ -455,7 +455,8 @@ def get_parametre(cle: str, session: Session) -> str | float | int:
 
     Conversion TEXT → type Python selon la clé connue (8 clés seules) :
 
-    - marge_defaut, rendement_calepinage, facteur_k  → float
+    - marge_defaut, marge_max, rendement_calepinage,
+      facteur_k                                      → float
     - regle_diam_trou_min_e, regle_aile_min_e,
       regle_rayon_min_e, regle_rayon_max_e,
       regle_rayon_max_aile                           → float
@@ -480,6 +481,7 @@ def get_parametre(cle: str, session: Session) -> str | float | int:
     # Conversion selon la clé
     _conversion: dict[str, Any] = {
         "marge_defaut": float,
+        "marge_max": float,
         "seuil_confiance_champs": float,
         "rendement_calepinage": float,
         "facteur_k": float,

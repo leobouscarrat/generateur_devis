@@ -19,6 +19,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from generateur_devis.data.acces import get_parametre
 from generateur_devis.data.audit import enregistrer_modification
 from generateur_devis.data.tables import (
     BorneControle,
@@ -33,7 +34,7 @@ from generateur_devis.data.tables import (
     Traitement,
     VitesseCoupe,
 )
-from generateur_devis.devis import marge_valide
+from generateur_devis.devis import formater_marge, marge_valide, verifier_marge
 from generateur_devis.extraction.extracteur import extraire_json
 from generateur_devis.extraction.prompt import (
     prompt_systeme_admin,
@@ -331,7 +332,9 @@ def _valider_modification(modif: ModificationAdmin, session: Session) -> None:
     if _est_marge(modif.table, modif.ligne_id, modif.champ):
         # Avant la coercition : un texte non numérique (« 25 % ») sur un champ
         # float reçoit le message des marges, pas « Valeur incompatible ».
-        _valider_marge(modif.table, modif.ligne_id, modif.champ, modif.valeur)
+        _valider_marge(modif.table, modif.ligne_id, modif.champ, modif.valeur, session)
+    if _est_marge_max(modif.table, modif.ligne_id, modif.champ):
+        _valider_marge_max(modif.valeur, session)
     if _est_modele_extraction(modif.table, modif.ligne_id, modif.champ):
         _valider_modele_extraction(modif.valeur)
     valeur = _coercer(modif.table, modif.champ, modif.valeur)
@@ -339,29 +342,62 @@ def _valider_modification(modif: ModificationAdmin, session: Session) -> None:
 
 
 def _est_marge(table: str, ligne_id: str, champ: str) -> bool:
-    """Champs administrables qui portent une marge (bornés par `marge_valide`)."""
+    """Champs administrables qui portent une marge (bornés par `verifier_marge`)."""
     return (table, champ) == ("clients", "marge_specifique") or (
         table == "parametres" and ligne_id == "marge_defaut" and champ == "valeur"
     )
 
 
-def _valider_marge(table: str, ligne_id: str, champ: str, valeur: Any) -> None:
-    """Lève ErreurAdmin si `valeur` n'est pas une marge valide.
+def _valider_marge(table: str, ligne_id: str, champ: str, valeur: Any, session: Session) -> None:
+    """Lève ErreurAdmin si `valeur` n'est pas une marge acceptable.
 
-    `parametres.valeur` est du texte : la valeur est convertie par `float()`.
-    Un texte non numérique (« 25 % », « 0,25 ») est refusé avec le même message.
+    Même règle que la restitution (`verifier_marge`, borne haute ``marge_max``
+    lue en base, issue #102). `parametres.valeur` est du texte : la valeur est
+    convertie par `float()`. Un texte non numérique (« 25 % », « 0,25 ») est
+    refusé avec le même message.
     """
+    marge_max = float(get_parametre("marge_max", session))
     try:
-        valide = marge_valide(float(valeur))
+        motif = verifier_marge(float(valeur), marge_max)
     except (TypeError, ValueError):
-        valide = False
-    if not valide:
+        motif = ""
+    if motif is not None:
         msg = (
             f"Marge invalide pour {table}.{champ} « {ligne_id} » : {valeur!r}. "
+            f"{motif + ' ' if motif else ''}"
             "Une marge est une fraction comprise entre 0 (incluse) et 1 (exclue), "
-            "ex. 0.25 pour 25 %."
+            "ex. 0.25 pour 25 %, au plus égale au paramètre marge_max."
         )
         raise ErreurAdmin(msg)
+
+
+def _est_marge_max(table: str, ligne_id: str, champ: str) -> bool:
+    """Paramètre de la borne haute des marges (issue #102)."""
+    return (table, ligne_id, champ) == ("parametres", "marge_max", "valeur")
+
+
+def _valider_marge_max(valeur: Any, session: Session) -> None:
+    """Lève ErreurAdmin si `valeur` n'est pas une borne haute de marge acceptable.
+
+    0 < marge_max < 1 et marge_max ≥ ``marge_defaut`` **courante** en base.
+    Version simple : une demande qui abaisse marge_max et marge_defaut dans le
+    même diff est contrôlée contre la base courante (deux demandes successives).
+    Les marges clients au-dessus du nouveau plafond ne sont pas contrôlées
+    ici : la restitution les refuse (⛔, émission bloquée).
+    """
+    try:
+        marge_max = float(valeur)
+    except (TypeError, ValueError):
+        marge_max = float("nan")
+    marge_defaut = float(get_parametre("marge_defaut", session))
+    if not (marge_valide(marge_max) and marge_max > 0):
+        motif = "doit être une fraction strictement comprise entre 0 et 1 (ex. 0.6 pour 60 %)"
+    elif marge_max < marge_defaut:
+        motif = f"doit être au moins égale à marge_defaut ({formater_marge(marge_defaut)})"
+    else:
+        return
+    msg = f"Marge maximale invalide (parametres « marge_max ») : {valeur!r}, {motif}."
+    raise ErreurAdmin(msg)
 
 
 def _est_modele_extraction(table: str, ligne_id: str, champ: str) -> bool:

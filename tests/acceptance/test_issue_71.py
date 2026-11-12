@@ -7,7 +7,7 @@ unitaires sont référencés, pas dupliqués :
 - Refus à la proposition, base inchangée → test_marge_defaut_100_pct_refusee
 - Re-validation à `appliquer`, sans audit →
   test_admin_agent::test_appliquer_revalide_la_marge_sans_audit
-- Bornes 0 et 0.999 acceptées, autres paramètres non affectés →
+- Bornes 0 et marge_max (0.6, issue #102) acceptées, autres paramètres non affectés →
   test_admin_agent::test_marge_defaut_aux_bornes_acceptee,
   test_rayon_pliage_defaut_parametre_administrable
 - Règle 7 de `CONSIGNES_ADMIN` → test_admin_agent::test_prompt_admin_enonce_la_borne_des_marges

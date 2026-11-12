@@ -21,7 +21,7 @@ from streamlit.testing.v1 import AppTest
 
 from generateur_devis.controles_prix import evaluer_controles_prix
 from generateur_devis.data.seed import seed
-from generateur_devis.data.tables import Base, HistoriqueDevis
+from generateur_devis.data.tables import Base, HistoriqueDevis, Parametre
 from generateur_devis.schema.piece import (
     Aile,
     Champ,
@@ -144,9 +144,13 @@ def test_alertes_restitution_recalculees_depuis_le_devis(fabrique):
     Le résultat du dépôt n'a aucune alerte (matière non résolue) : avant le
     correctif, l'écran de restitution n'en affichait donc aucune.
     """
+    # 90 % dépasse le plafond seedé (marge_max 60 %, #102) : plafond relevé.
+    with fabrique() as session:
+        session.get(Parametre, "marge_max").valeur = "0.95"
+        session.commit()
     at = _valider()
     assert at.session_state[CLE_RESULTAT].alertes_controles == []
-    next(n for n in at.number_input if n.label == "Marge").set_value(0.90)
+    next(n for n in at.number_input if n.label == "Marge (%)").set_value(90.0)
     next(b for b in at.button if b.label == "Appliquer la marge").click().run()
     assert not at.exception, [e.value for e in at.exception]
 

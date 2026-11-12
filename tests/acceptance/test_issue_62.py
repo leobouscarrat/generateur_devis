@@ -4,7 +4,8 @@ Avant le correctif, ``st.number_input("Marge", min_value=0.0, max_value=0.95)``
 recevait la marge administrée telle quelle : ``marge_defaut`` à 0,97 (ou
 négative) faisait planter l'écran (``StreamlitValueAboveMaxError`` /
 ``BelowMinError``). La seule règle est désormais ``Devis.changer_marge``
-(0 ≤ marge < 1) ; une saisie refusée affiche un ⛔ sans rien modifier.
+(0 ≤ marge ≤ ``marge_max`` depuis #102, saisie en %) ; une saisie refusée
+affiche un ⛔ sans rien modifier.
 
 Parcours ``streamlit.testing.v1.AppTest`` sans appel IA, ``get_session``
 remplacé par une base SQLite en mémoire seedée où ``marge_defaut`` est muté.
@@ -90,7 +91,7 @@ def _restitution() -> AppTest:
 
 
 def _marge(at: AppTest):
-    return next(n for n in at.number_input if n.label == "Marge")
+    return next(n for n in at.number_input if n.label == "Marge (%)")
 
 
 def _appliquer(at: AppTest, valeur: float) -> None:
@@ -105,13 +106,13 @@ def test_marge_administree_hors_anciennes_bornes_sans_plantage(monkeypatch, marg
     at = _restitution()
     assert at.session_state[CLE_DEVIS].marge == pytest.approx(float(marge_defaut))
     champ = _marge(at)
-    assert champ.value == pytest.approx(float(marge_defaut))
+    assert champ.value == pytest.approx(float(marge_defaut) * 100)
     assert champ.min is None
     assert champ.max is None
 
 
-@pytest.mark.parametrize("saisie", [1.0, -0.01])
-def test_saisie_hors_bornes_refusee_sans_effet(monkeypatch, saisie):
+@pytest.mark.parametrize(("saisie", "affiche"), [(100.0, "100 %"), (-1.0, "-1 %")])
+def test_saisie_hors_bornes_refusee_sans_effet(monkeypatch, saisie, affiche):
     _fabrique(monkeypatch, "0.25")
     at = _restitution()
     devis = at.session_state[CLE_DEVIS]
@@ -121,21 +122,24 @@ def test_saisie_hors_bornes_refusee_sans_effet(monkeypatch, saisie):
     _appliquer(at, saisie)
 
     # AppTest retire l'emoji de tête (« ⛔ ») de la valeur des st.error.
-    assert [e.value for e in at.error] == [f"Marge invalide : {saisie}."]
+    assert [e.value for e in at.error] == [
+        f"Marge refusée : {affiche} hors de la plage 0 – 60 %. Marge appliquée : 25 %."
+    ]
     devis = at.session_state[CLE_DEVIS]
     assert devis.marge == pytest.approx(0.25)
     assert [p.prix_unitaire_eur for p in devis.chiffrage.paliers] == prix
     assert len(devis.modifications) == nb_modifications
 
 
-def test_marge_096_appliquee_depuis_l_ecran(monkeypatch):
+def test_marge_60_pourcent_appliquee_depuis_l_ecran(monkeypatch):
+    """Borne haute métier (``marge_max`` seedé à 0.6, #102) incluse."""
     _fabrique(monkeypatch, "0.25")
     at = _restitution()
 
-    _appliquer(at, 0.96)
+    _appliquer(at, 60.0)
 
     assert not at.error
     devis = at.session_state[CLE_DEVIS]
-    assert devis.marge == pytest.approx(0.96)
+    assert devis.marge == pytest.approx(0.60)
     palier = devis.palier_commande()
-    assert palier.prix_unitaire_eur == pytest.approx(palier.cout_unitaire_eur / 0.04, rel=1e-9)
+    assert palier.prix_unitaire_eur == pytest.approx(palier.cout_unitaire_eur / 0.40, rel=1e-9)
