@@ -390,3 +390,15 @@ def test_prompt_admin_enonce_la_borne_des_marges():
     assert "marge_specifique" in prompt
     assert "marge_defaut" in prompt
     assert "0 ≤ marge < 1" in prompt
+
+
+@pytest.mark.parametrize("designation", ["modele-qui-nexiste-pas", "foo:bar", ""])
+def test_modele_mal_configure_erreur_admin_claire(session, designation):
+    """#79 : désignation invalide → ErreurAdmin lisible (jamais ValueError brute).
+
+    Le vrai ``creer_modele`` est appelé : il lève avant tout appel réseau.
+    """
+    with pytest.raises(ErreurAdmin, match="Modèle d'IA mal configuré") as exc:
+        proposer_modifications("le S235JR passe à 1,25 €/kg", designation, session)
+    assert "modele_extraction" in str(exc.value)
+    assert ".py" not in str(exc.value)

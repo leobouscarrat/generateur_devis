@@ -80,12 +80,13 @@ def main() -> None:
         st.session_state.pop(CLE_PROPOSITION_ADMIN, None)
         st.rerun()
 
-    # Modèle par défaut : paramètre administrable (l'agent peut le modifier).
+    # Modèle unique : paramètre administrable (l'agent peut le modifier),
+    # invisible ici ; la variable d'environnement MODELE_EXTRACTION le surcharge.
+    # Une désignation invalide remonte en ErreurAdmin (message clair).
     with get_session() as session:
-        modele_defaut = os.environ.get("MODELE_EXTRACTION") or get_parametre(
+        nom_modele = os.environ.get("MODELE_EXTRACTION") or get_parametre(
             "modele_extraction", session
         )
-    nom_modele = st.text_input("Modèle de l'agent", modele_defaut)
 
     proposition: PropositionAdmin | None = st.session_state.get(CLE_PROPOSITION_ADMIN)
 
@@ -97,7 +98,7 @@ def main() -> None:
         )
         if st.button(
             "Proposer la modification",
-            disabled=not nom_modele or not texte.strip(),
+            disabled=not texte.strip(),
         ):
             try:
                 with st.spinner("L'agent analyse la demande…"), get_session() as session:
