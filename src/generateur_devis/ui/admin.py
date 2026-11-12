@@ -113,6 +113,7 @@ def main() -> None:
             st.error(texte_message)
 
     proposition: PropositionAdmin | None = st.session_state.get(CLE_PROPOSITION_ADMIN)
+    lignes: list[tuple[str, str, str, str, str]] | None = None
 
     if proposition is None:
         texte = st.text_area(
@@ -139,12 +140,21 @@ def main() -> None:
             st.session_state.pop(CLE_PROPOSITION_ADMIN, None)
             st.rerun()
     else:
-        st.caption("⚠️ " + AVERTISSEMENT_RECHARGEMENT_ADMIN)
         # --- Affichage avant / après (valeur actuelle lue en base) --------------
+        try:
+            with get_session() as session:
+                lignes = proposition.ligne_avant_apres(session)
+        except ErreurAdmin as e:
+            # Ligne disparue ou clé devenue invalide depuis la proposition :
+            # sans capture, l'écran planterait à chaque rerun (#98).
+            st.error(f"Cette proposition ne correspond plus à la base : {e} Refaites la demande.")
+            if st.button("Nouvelle demande"):
+                st.session_state.pop(CLE_PROPOSITION_ADMIN, None)
+                st.rerun()
+    if proposition is not None and lignes is not None:
+        st.caption("⚠️ " + AVERTISSEMENT_RECHARGEMENT_ADMIN)
         if proposition.remarque:
             st.info(f"💬 {proposition.remarque}")
-        with get_session() as session:
-            lignes = proposition.ligne_avant_apres(session)
         st.dataframe(
             pd.DataFrame(
                 [
