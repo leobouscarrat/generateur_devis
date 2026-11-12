@@ -103,6 +103,8 @@ direction = "pilotage2026"
 
 Le nom de connexion devient l'auteur de chaque modification (audit daté et attribué, visible en bas de l'écran).
 
+Limite assumée de cette connexion de démonstration : elle ne vit que dans la session Streamlit. Recharger la page (F5, retour arrière) déconnecte et perd la proposition de l'agent en attente — l'écran l'avertit tant qu'une proposition attend d'être acceptée ou refusée. Une session persistante est hors périmètre V1.
+
 ## Structure du dépôt
 
 ```

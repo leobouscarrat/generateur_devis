@@ -28,6 +28,17 @@ from generateur_devis.ui.auth import verifier_identifiants
 
 CLE_PROPOSITION_ADMIN = "proposition_admin"
 CLE_AUTEUR = "admin_auteur"
+# Résultat de la dernière acceptation (niveau, texte) : affiché au rerun suivant,
+# sinon le ``st.rerun()`` qui suit l'application l'efface aussitôt.
+CLE_MESSAGE_ADMIN = "message_admin"
+
+# Un F5 ouvre une nouvelle session Streamlit : connexion et proposition perdues (#93).
+AVERTISSEMENT_RECHARGEMENT_ADMIN = (
+    "Ne rechargez pas la page et n'utilisez pas le retour arrière du navigateur : "
+    "la proposition en attente serait perdue et vous seriez déconnecté. "
+    "Acceptez-la ou refusez-la d'abord."
+)
+MESSAGE_AUCUNE_MODIFICATION = "L'agent n'a proposé aucune modification. Reformulez la demande."
 
 
 def _comptes() -> dict[str, str]:
@@ -88,6 +99,14 @@ def main() -> None:
             "modele_extraction", session
         )
 
+    message = st.session_state.pop(CLE_MESSAGE_ADMIN, None)
+    if message is not None:
+        niveau, texte_message = message
+        if niveau == "succes":
+            st.success(texte_message)
+        else:
+            st.error(texte_message)
+
     proposition: PropositionAdmin | None = st.session_state.get(CLE_PROPOSITION_ADMIN)
 
     if proposition is None:
@@ -107,7 +126,15 @@ def main() -> None:
                 st.rerun()
             except ErreurAdmin as e:
                 st.error(str(e))
+    elif not proposition.modifications:
+        # Demande refusée ou ambiguë : l'agent ne répond que par une remarque.
+        # Rien à accepter, donc ni tableau vide ni bouton « Accepter » (#93).
+        st.info(f"💬 {proposition.remarque or MESSAGE_AUCUNE_MODIFICATION}")
+        if st.button("Nouvelle demande"):
+            st.session_state.pop(CLE_PROPOSITION_ADMIN, None)
+            st.rerun()
     else:
+        st.caption("⚠️ " + AVERTISSEMENT_RECHARGEMENT_ADMIN)
         # --- Affichage avant / après (valeur actuelle lue en base) --------------
         if proposition.remarque:
             st.info(f"💬 {proposition.remarque}")
@@ -134,9 +161,15 @@ def main() -> None:
                     with get_session() as session:
                         nb = proposition.appliquer(auteur, session)
                         session.commit()
-                    st.success(f"{nb} modification(s) appliquée(s) et auditée(s).")
+                    st.session_state[CLE_MESSAGE_ADMIN] = (
+                        "succes",
+                        f"{nb} modification(s) appliquée(s) et auditée(s).",
+                    )
                 except ErreurAdmin as e:
-                    st.error(f"Modification refusée à l'application : {e}")
+                    st.session_state[CLE_MESSAGE_ADMIN] = (
+                        "erreur",
+                        f"Modification refusée à l'application : {e}",
+                    )
                 st.session_state.pop(CLE_PROPOSITION_ADMIN, None)
                 st.rerun()
         with col_non:
