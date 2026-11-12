@@ -23,6 +23,7 @@ def test_suffixes():
 def test_entiers():
     assert formater_valeur("qte_min", 1.9) == "2"
     assert formater_valeur("nb_operateurs", 1) == "1"
+    assert formater_valeur("quantite", 4) == "4"  # #67 : pas « 4.00 »
 
 
 def test_non_numeriques():
