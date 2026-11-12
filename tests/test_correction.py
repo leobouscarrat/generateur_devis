@@ -748,7 +748,8 @@ def test_proposition_valide_les_valeurs_avant_affichage(monkeypatch):
 
 
 def test_proposition_nom_de_modele_invalide():
-    with pytest.raises(ErreurCorrection, match="Assistant indisponible"):
+    # #92 : le message désigne la configuration en cause.
+    with pytest.raises(ErreurCorrection, match="Modèle d'IA mal configuré"):
         proposer_correction(piece_support(), "corrige", "sans_fournisseur")
 
 
@@ -771,3 +772,23 @@ def test_garde_fou_chemins_autorises_existent_dans_le_schema():
                 c for c in candidats if isinstance(c, type) and issubclass(c, BaseModel)
             )
         assert segments[-1] in modele.model_fields, chemin
+
+
+# --- Modèle d'IA mal configuré (issue #92) ------------------------------------
+
+
+def test_proposition_modele_mal_configure_cite_la_configuration():
+    from generateur_devis.llm import MODELE_MAL_CONFIGURE
+
+    with pytest.raises(ErreurCorrection) as exc:
+        proposer_correction(piece_support(), "corrige", "foo:bar")
+    assert str(exc.value).startswith(MODELE_MAL_CONFIGURE)
+    assert "Fournisseur inconnu : foo" in str(exc.value)
+
+
+def test_proposition_modele_sans_cle_api_erreur_correction(monkeypatch):
+    """``ErreurModele`` levée à la construction → ErreurCorrection, pas un traceback."""
+    monkeypatch.setattr("generateur_devis.llm.load_dotenv", lambda *a, **k: None)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    with pytest.raises(ErreurCorrection, match="Assistant indisponible.*clé d'API manquante"):
+        proposer_correction(piece_support(), "corrige", "openrouter:x")
