@@ -25,10 +25,13 @@ from generateur_devis.calcul_prix import calculer_bloc_finition
 from generateur_devis.controles_prix import evaluer_controles_prix
 from generateur_devis.data.acces import (
     TRAITEMENT_ID_PAR_TYPE,
+    TYPE_COMPOSANT_PAR_TYPE_EXTRAIT,
+    ComposantPydantic,
     get_client,
     get_parametre,
     get_traitement,
     list_clients,
+    list_composants,
     list_matieres,
 )
 from generateur_devis.data.db import get_session
@@ -43,6 +46,7 @@ from generateur_devis.pdf import generer_pdf_client
 from generateur_devis.schema.piece import (
     Aile,
     Champ,
+    Composant,
     PieceExtraite,
     Pli,
     ProfilPliage,
@@ -80,6 +84,7 @@ CLES_VALIDATION = (
     "texte_correction",
     "editeur_profil",
     "editeur_trous",
+    "editeur_composants",
 )
 
 
@@ -294,6 +299,10 @@ def _ecran_assistant(piece: PieceExtraite) -> None:
         with col_ok:
             if st.button("✅ Accepter", disabled=piece_apres is None):
                 st.session_state[CLE_PIECE_CORRIGEE] = piece_apres
+                if piece_apres.composants != piece.composants:
+                    # Tableau à lignes fixes : ses éditions survivent à un
+                    # changement de valeurs et masqueraient la correction (#56).
+                    st.session_state.pop("editeur_composants", None)
                 _journaliser_correction(
                     st.session_state.get("texte_en_cours", ""), proposition, "acceptee"
                 )
@@ -653,6 +662,102 @@ def _valider_lignes(lignes_profil: list[dict], lignes_trous: list[dict]) -> list
     return erreurs
 
 
+def libelle_composant(c: ComposantPydantic) -> str:
+    """« ES-M6-A — Écrou à sertir M6 (0,20 €/u) », lot signalé si qte_min > 1."""
+    prix = formater_valeur("prix_unitaire_eur", c.prix_unitaire_eur).replace(".", ",")
+    lot = f", lot ≥ {c.qte_min}" if c.qte_min > 1 else ""
+    return f"{c.reference} — {c.designation} ({prix} €/u{lot})"
+
+
+@dataclass(frozen=True)
+class Rattachement:
+    """Pré-sélection de la référence d'un composant et sa raison (issue #56)."""
+
+    reference: str | None  # None = cellule vide
+    explication: str  # jamais vide, affichée dans la colonne « origine »
+
+
+def proposer_rattachement(
+    composant: Composant, referentiel: list[ComposantPydantic]
+) -> Rattachement:
+    """Candidats = type mappé (``TYPE_COMPOSANT_PAR_TYPE_EXTRAIT``) ET filetage égal.
+
+    Un seul candidat → pré-sélectionné « à confirmer » ; plusieurs → aucun
+    (l'utilisateur choisit, jamais un choix fait par le code) ; aucun → vide.
+    """
+    type_ref = TYPE_COMPOSANT_PAR_TYPE_EXTRAIT.get(composant.type)
+    candidats = (
+        [
+            c.reference
+            for c in referentiel
+            if c.type == type_ref and c.filetage == composant.filetage
+        ]
+        if type_ref is not None and composant.filetage is not None
+        else []
+    )
+    if len(candidats) == 1:
+        return Rattachement(
+            candidats[0],
+            f"Seule référence {type_ref} {composant.filetage} du référentiel : à confirmer.",
+        )
+    if candidats:
+        return Rattachement(
+            None, f"{len(candidats)} références possibles ({', '.join(candidats)}) : à choisir."
+        )
+    return Rattachement(
+        None, "Aucune référence correspondante au référentiel : à choisir ou à ajouter (admin)."
+    )
+
+
+@dataclass(frozen=True)
+class LectureComposants:
+    """Composants lus du data_editor (issue #56)."""
+
+    nomenclature: list[Composant]  # quantités éditées → editee.composants
+    a_chiffrer: list[tuple[str, int]]  # couples pour rechiffrer
+    non_chiffres: list[str]  # ⚠️ non bloquants
+    erreurs: list[str]  # ⛔ bloquantes
+
+
+def lire_composants(
+    nomenclature: list[Composant],
+    lignes: list[dict],
+    reference_par_libelle: dict[str, str],
+) -> LectureComposants:
+    """Relit le tableau des composants, lignes dans l'ordre de ``nomenclature``.
+
+    Schéma attendu des lignes : ``composant``, ``type``, ``filetage``,
+    ``quantite``, ``reference`` (libellé lisible), ``origine``. Seules
+    ``quantite`` (entier ≥ 1, lu NaN-sûr) et ``reference`` sont lues.
+    Référence vide → composant non chiffré (⚠️, non bloquant) ; quantité vide,
+    < 1 ou non entière → erreur bloquante.
+    """
+    lus: list[Composant] = []
+    a_chiffrer: list[tuple[str, int]] = []
+    non_chiffres: list[str] = []
+    erreurs: list[str] = []
+    for composant, ligne in zip(nomenclature, lignes, strict=True):
+        quantite = _nombre(ligne.get("quantite"))
+        if quantite is None or quantite < 1 or quantite != int(quantite):
+            erreurs.append(
+                f"Composant « {composant.designation} » : quantité entière ≥ 1 attendue."
+            )
+            lus.append(composant)
+            continue
+        quantite = int(quantite)
+        lus.append(composant.model_copy(update={"quantite": quantite}))
+        libelle = ligne.get("reference")
+        reference = reference_par_libelle.get(libelle) if isinstance(libelle, str) else None
+        if reference is None:
+            non_chiffres.append(
+                f"Composant non chiffré : {composant.designation} × {quantite} — "
+                "choisissez sa référence dans le tableau des composants."
+            )
+        else:
+            a_chiffrer.append((reference, quantite))
+    return LectureComposants(lus, a_chiffrer, non_chiffres, erreurs)
+
+
 def _choix_matieres(session) -> dict[str, str]:
     """Libellés lisibles → identifiants : « S235JR — acier (EN 10025) »."""
     return {
@@ -896,6 +1001,48 @@ def _editer_piece(
     return editee, matiere_id, []
 
 
+def _editer_composants(
+    piece: PieceExtraite, referentiel: list[ComposantPydantic]
+) -> LectureComposants:
+    """Tableau des composants : référence du référentiel à choisir (issue #56)."""
+    if not piece.composants:
+        return LectureComposants([], [], [], [])
+    libelles = {libelle_composant(c): c.reference for c in referentiel}
+    libelle_par_reference = {ref: lib for lib, ref in libelles.items()}
+    rattachements = [proposer_rattachement(c, referentiel) for c in piece.composants]
+    st.caption(
+        "Composants (nomenclature) : choisissez la référence du référentiel pour les chiffrer"
+    )
+    tableau = st.data_editor(
+        pd.DataFrame(
+            [
+                {
+                    "composant": c.designation,
+                    "type": c.type,
+                    "filetage": c.filetage,
+                    "quantite": c.quantite,
+                    "reference": libelle_par_reference.get(r.reference),
+                    "origine": r.explication,
+                }
+                for c, r in zip(piece.composants, rattachements, strict=True)
+            ],
+            columns=["composant", "type", "filetage", "quantite", "reference", "origine"],
+        ),
+        num_rows="fixed",
+        key="editeur_composants",
+        disabled=["composant", "type", "filetage", "origine"],
+        column_config={
+            "quantite": st.column_config.NumberColumn(
+                "quantite", help="Lue sur le plan.", min_value=1, step=1, required=True
+            ),
+            "reference": st.column_config.SelectboxColumn(
+                "reference", options=list(libelles), required=False
+            ),
+        },
+    )
+    return lire_composants(piece.composants, tableau.to_dict("records"), libelles)
+
+
 def ecran_validation() -> None:
     """Écran 2 : validation humaine — anomalies en tête, 3D, recalcul immédiat."""
     st.title("Validation de la pièce")
@@ -934,21 +1081,32 @@ def ecran_validation() -> None:
         editee, matiere_id, erreurs_saisie = _editer_piece(
             piece, choix_matieres, matiere, resultat_initial.conversion
         )
-        if editee is None:
+        # Rendu même si la saisie est bloquée (pas de formulaire masqué).
+        composants = _editer_composants(piece, list_composants(session))
+        erreurs_saisie = erreurs_saisie + composants.erreurs
+        if editee is None or composants.erreurs:
             for erreur in erreurs_saisie:
                 st.error(f"⛔ Saisie incomplète — {erreur}")
             st.info("Corrigez le formulaire : aucun élément n'est supprimé silencieusement.")
             return
+        editee.composants = composants.nomenclature
 
         # --- Anomalies et alertes en tête ------------------------------------
         for probleme in editee.problemes_coherence():
             st.warning(f"⚠️ Cohérence : {probleme}")
         for champ in _champs_peu_surs(editee, session):
             st.warning(f"⚠️ Lecture incertaine — {champ}")
+        for message in composants.non_chiffres:
+            st.warning(f"⚠️ {message}")
 
         # --- Recalcul immédiat (chaque modification ré-exécute le script) ----
         resultat = rechiffrer(
-            editee, matiere_id, contexte.get("client_id"), contexte.get("quantites"), session
+            editee,
+            matiere_id,
+            contexte.get("client_id"),
+            contexte.get("quantites"),
+            session,
+            composants=composants.a_chiffrer,
         )
         _afficher_constats(resultat)
         if resultat.erreur:

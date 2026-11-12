@@ -204,6 +204,15 @@ TRAITEMENT_ID_PAR_TYPE: dict[str, str] = {
     "passivation": "PASSIVATION",
 }
 
+# Correspondance type de composant extrait (schema.piece) → type du référentiel
+# `composants` (les littéraux diffèrent : « ecrou_a_sertir » / « ecrou_sertir »).
+# insert, rivet, autre : pas d'équivalent au référentiel → aucune proposition.
+TYPE_COMPOSANT_PAR_TYPE_EXTRAIT: dict[str, str] = {
+    "ecrou_a_sertir": "ecrou_sertir",
+    "goujon_a_sertir": "goujon_sertir",
+    "entretoise_a_sertir": "entretoise",
+}
+
 
 def get_matiere(matiere_id: str, session: Session) -> MatierePydantic | None:
     """Retourner la matière par son identifiant, ou None si introuvable."""
@@ -398,6 +407,25 @@ def get_composant(reference: str, session: Session) -> ComposantPydantic | None:
         qte_min=ligne.qte_min,
         operation_id=ligne.operation_id,
     )
+
+
+def list_composants(session: Session) -> list[ComposantPydantic]:
+    """Tous les composants du référentiel, triés par référence (listes déroulantes)."""
+    from generateur_devis.data.tables import Composant as ComposantTable
+
+    return [
+        ComposantPydantic(
+            reference=ligne.reference,
+            designation=ligne.designation,
+            type=ligne.type,
+            filetage=ligne.filetage,
+            matiere=ligne.matiere,
+            prix_unitaire_eur=ligne.prix_unitaire_eur,
+            qte_min=ligne.qte_min,
+            operation_id=ligne.operation_id,
+        )
+        for ligne in session.query(ComposantTable).order_by(ComposantTable.reference).all()
+    ]
 
 
 def get_traitement(traitement_id: str, session: Session) -> TraitementPydantic | None:

@@ -16,7 +16,8 @@ Conventions :
 - plan coté en pouces → pièce convertie en mm juste après l'extraction,
   conversion tracée dans ``ResultatDevis.conversion`` (issue #57) ;
 - composants non chiffrés ici : leur référence n'est pas extraite du plan
-  (tranché en 3.2), ils seront saisis à la validation.
+  (tranché en 3.2) ; ils sont rattachés au référentiel à l'écran de
+  validation, qui les transmet à ``rechiffrer(..., composants=...)`` (#56).
 """
 
 from __future__ import annotations
@@ -143,8 +144,12 @@ def rechiffrer(
     client_id: str | None,
     quantites: list[int] | None,
     session: Session,
+    composants: list[tuple[str, int]] | None = None,
 ) -> ResultatDevis:
     """Rechiffre une pièce modifiée sans repasser par l'extraction (issue #24).
+
+    ``composants`` : couples (référence du référentiel, quantité) rattachés à
+    l'écran de validation (issue #56), transmis tels quels à ``chiffrer``.
 
     Étapes géométrie → faisabilité → chiffrage → contrôles, déterministes et
     sans appel IA : appelée à chaque modification du formulaire de validation
@@ -170,7 +175,12 @@ def rechiffrer(
 
     try:
         resultat.chiffrage = chiffrer(
-            piece, matiere_id, session, quantites=quantites, client_id=client_id
+            piece,
+            matiere_id,
+            session,
+            quantites=quantites,
+            composants=composants,
+            client_id=client_id,
         )
     except ErreurChiffrage as e:
         resultat.erreur = str(e)
