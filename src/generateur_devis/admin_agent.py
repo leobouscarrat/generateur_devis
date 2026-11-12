@@ -381,6 +381,9 @@ def proposer_modifications(texte: str, nom_modele: str, session: Session) -> Pro
             f"ou variable MODELE_EXTRACTION) : {e}"
         )
         raise ErreurAdmin(msg) from e
+    except ErreurModele as e:  # construction : clé d'API absente, Claude Code introuvable
+        msg = f"Agent indisponible : {e}"
+        raise ErreurAdmin(msg) from e
     try:
         reponse = modele.generer(prompt_systeme_admin(), prompt_utilisateur_admin(texte), [])
     except ErreurModele as e:

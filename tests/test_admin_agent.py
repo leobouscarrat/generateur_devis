@@ -402,3 +402,16 @@ def test_modele_mal_configure_erreur_admin_claire(session, designation):
         proposer_modifications("le S235JR passe à 1,25 €/kg", designation, session)
     assert "modele_extraction" in str(exc.value)
     assert ".py" not in str(exc.value)
+
+
+def test_modele_sans_cle_api_erreur_admin_claire(monkeypatch, session):
+    """#79 (revue) : ``creer_modele`` lève aussi ``ErreurModele`` à la construction
+    (clé d'API absente) — elle doit devenir une ErreurAdmin, pas un traceback.
+
+    ``.env`` neutralisé et clé retirée : le vrai ``creer_modele`` lève avant tout
+    appel réseau.
+    """
+    monkeypatch.setattr("generateur_devis.llm.load_dotenv", lambda *a, **k: None)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    with pytest.raises(ErreurAdmin, match="Agent indisponible.*clé d'API manquante"):
+        proposer_modifications("le S235JR passe à 1,25 €/kg", "openrouter:modele-x", session)
