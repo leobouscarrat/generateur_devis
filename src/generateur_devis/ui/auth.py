@@ -5,6 +5,12 @@ côté client est contournable (le code est lisible). Elle sert à matérialiser
 les rôles du §12 et à rattacher un auteur à chaque modification d'audit.
 
 Comptes : ``st.secrets["admin"]["utilisateurs"]`` (dict nom → mot de passe).
+
+Limite assumée (#93) : l'état de connexion ne vit que dans ``session_state``.
+Un rechargement de la page (F5, retour arrière) ouvre une nouvelle session
+Streamlit : l'utilisateur est déconnecté et la proposition de l'agent en
+attente est perdue (l'écran l'avertit tant qu'une proposition attend). Une
+session persistante (cookie, jeton) est hors périmètre V1.
 """
 
 from __future__ import annotations

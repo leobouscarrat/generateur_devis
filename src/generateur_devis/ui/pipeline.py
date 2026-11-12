@@ -42,7 +42,7 @@ from generateur_devis.extraction import ResultatExtraction, charger_plan, extrai
 from generateur_devis.extraction.prompt import ANOMALIE_DOCUMENT
 from generateur_devis.faisabilite import Constat, evaluer_faisabilite
 from generateur_devis.geometrie import ErreurGeometrie, Flan, construire_flan
-from generateur_devis.llm import creer_modele
+from generateur_devis.llm import MODELE_MAL_CONFIGURE, ErreurModele, creer_modele
 from generateur_devis.schema.piece import Anomalie, PieceExtraite
 from generateur_devis.unites import ConversionUnites, convertir_en_mm
 
@@ -143,7 +143,16 @@ def orchestrer_devis(
     except ValueError as e:
         return ResultatDevis(erreur=str(e))
 
-    extraction = extraire(document, creer_modele(nom_modele), memoire=memoire)
+    # Configuration du modèle invalide : message lisible, on reste sur le dépôt
+    # (issue #92). Après charger_plan : un fichier illisible garde son message.
+    try:
+        modele = creer_modele(nom_modele)
+    except ValueError as e:  # format « fournisseur:modèle » ou fournisseur inconnu
+        return ResultatDevis(erreur=f"{MODELE_MAL_CONFIGURE} : {e}")
+    except ErreurModele as e:  # construction : clé d'API absente, Claude Code introuvable
+        return ResultatDevis(erreur=f"Modèle d'IA indisponible : {e}")
+
+    extraction = extraire(document, modele, memoire=memoire)
     if extraction.erreur is not None or extraction.piece is None:
         return ResultatDevis(
             erreur=f"Extraction impossible : {extraction.erreur or 'aucune pièce extraite.'}"

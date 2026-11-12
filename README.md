@@ -105,6 +105,8 @@ Le nom de connexion devient l'auteur de chaque modification (audit daté et attr
 
 La section « Consulter les référentiels » affiche en lecture seule, sans appel IA, les valeurs en vigueur de chaque table administrable (clé et champs modifiables par l'agent), pour formuler une mise à jour en connaissant la valeur actuelle.
 
+Limite assumée de cette connexion de démonstration : elle ne vit que dans la session Streamlit. Recharger la page (F5, retour arrière) déconnecte et perd la proposition de l'agent en attente — l'écran l'avertit tant qu'une proposition attend d'être acceptée ou refusée. Une session persistante est hors périmètre V1.
+
 ## Structure du dépôt
 
 ```
