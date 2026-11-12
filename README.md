@@ -2,17 +2,6 @@
 
 Prototype d'un outil interne qui génère automatiquement un devis à partir d'un plan technique de pièce de tôlerie ou d'usinage.
 
-Projet réalisé dans le cadre du cas pratique « Data Scientist » du groupe Maji.
-
-## Contexte
-
-Aujourd'hui, les devis sont faits à la main sur Excel. Ce processus est :
-
-- **long** : il faut relire le plan, mesurer, ressaisir ;
-- **peu fiable** : erreurs de saisie et formules différentes d'une personne à l'autre ;
-- **dépendant de multiples sources** : prix matière, composants, temps machine.
-
-L'objectif est de rendre ce processus plus rapide, plus fiable et plus homogène.
 
 ## Principe
 
