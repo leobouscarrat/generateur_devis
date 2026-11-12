@@ -1,15 +1,19 @@
 """Rendu du modèle 3D dans Streamlit (issue #24) : Maillage → figure plotly.
 
-Fonction pure (hors Streamlit) : l'écran appelle ``st.plotly_chart`` sur la
-figure retournée. Un maillage vide (pas de profil de pliage) retourne None —
-l'écran affiche alors un message informatif, pas d'erreur.
+Fonctions pures (hors Streamlit) : l'écran appelle ``figure_modele_3d`` puis
+``st.plotly_chart`` sur la figure, ou ``st.info`` sur le message qui explique
+son absence — profil de pliage absent (``MESSAGE_SANS_PROFIL``) ou vraie raison
+de l'échec de construction (issue #66), jamais d'erreur.
 """
 
 from __future__ import annotations
 
 import plotly.graph_objects as go
 
-from generateur_devis.modele3d import Maillage
+from generateur_devis.modele3d import ErreurGeometrie, Maillage, construire_modele_3d
+from generateur_devis.schema.piece import PieceExtraite
+
+MESSAGE_SANS_PROFIL = "Pas de profil de pliage : modèle 3D non représenté en V1."
 
 
 def maillage_vers_figure(maillage: Maillage | None) -> go.Figure | None:
@@ -57,3 +61,25 @@ def maillage_vers_figure(maillage: Maillage | None) -> go.Figure | None:
         height=420,
     )
     return figure
+
+
+def figure_modele_3d(piece: PieceExtraite, facteur_k: float) -> tuple[go.Figure | None, str | None]:
+    """Figure 3D de la pièce, ou (None, message expliquant pourquoi elle est absente).
+
+    - ``profil_pliage`` None → (None, ``MESSAGE_SANS_PROFIL``) ;
+    - ``ErreurGeometrie`` de ``construire_modele_3d`` → (None, « Modèle 3D non
+      représentable : <message de l'erreur> ») ;
+    - sinon (figure, None).
+
+    Ne lève jamais ``ErreurGeometrie``.
+    """
+    if piece.profil_pliage is None:
+        return None, MESSAGE_SANS_PROFIL
+    try:
+        maillage = construire_modele_3d(piece, facteur_k)
+    except ErreurGeometrie as e:
+        return None, f"Modèle 3D non représentable : {e}"
+    figure = maillage_vers_figure(maillage)
+    if figure is None:
+        return None, MESSAGE_SANS_PROFIL
+    return figure, None

@@ -160,6 +160,8 @@ Limite V1 : pièces dont **tous les plis sont parallèles** (supports, pattes, p
 | Distance trou / pli ≥ 2 × épaisseur + rayon | 2 × e + R |
 | Longueur d'aile ≥ minimum de l'outillage | 4 × e |
 | Rayon de pliage ≥ épaisseur | 1,0 × e (plus pour certains aluminiums) |
+| Rayon de pliage ≤ k × épaisseur | 8 × e (alerte : outillage spécial) |
+| Rayon de pliage ≤ aile adjacente | 1 × aile (blocage) |
 | Dimensions du flan ≤ format de tôle et longueur de plieuse | selon `postes` |
 | Épaisseur disponible pour la matière | selon `epaisseurs_dispo` |
 | Traitement compatible avec la matière | galva → acier, anodisation → alu, passivation → inox |
