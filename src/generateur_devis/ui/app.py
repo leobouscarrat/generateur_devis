@@ -638,6 +638,33 @@ def explication_profil(profil: ProfilPliage | None) -> str:
     return f"Profil de pliage : lu sur le plan ({n_ailes} aile(s), {n_plis} pli(s))."
 
 
+Cotation = Literal["exterieure", "interieure"]
+
+LIBELLES_COTATION: dict[str, str] = {
+    "exterieure": "extérieures (longueurs d'ailes prises à l'extérieur des plis)",
+    "interieure": "intérieures (longueurs d'ailes prises à l'intérieur des plis)",
+}
+
+
+def cotation_initiale(profil: ProfilPliage | None) -> tuple[Cotation | None, str]:
+    """Pré-sélection du champ « Cotes du profil » et son explication (issue #69).
+
+    Explication toujours non vide. Jamais de valeur par défaut : une cotation
+    se lit sur le plan, ce n'est pas une règle d'atelier.
+    """
+    if profil is None:
+        return None, (
+            "Cotes du profil : pas de profil lu sur le plan — indiquez si les "
+            "longueurs saisies sont prises à l'extérieur ou à l'intérieur des plis."
+        )
+    if profil.cotation == "inconnue":
+        return None, (
+            "Cotes du profil : non précisées sur le plan — indiquez si les longueurs "
+            "d'ailes sont cotées à l'extérieur ou à l'intérieur des plis."
+        )
+    return profil.cotation, "Cotes du profil : lues sur le plan."
+
+
 def erreur_profil_vide(lignes_profil: list[dict]) -> str | None:
     """Erreur bloquante si aucune ligne du profil n'est remplie, sinon None.
 
@@ -999,6 +1026,22 @@ def _editer_piece(
     lignes_profil_editees = tableau_profil.to_dict("records")
     erreur_profil = erreur_profil_vide(lignes_profil_editees)
     st.caption(("⛔ " if erreur_profil else "") + explication_profil(piece.profil_pliage))
+    # Cotation : pré-remplie si lue, sinon choix exigé dès qu'il y a un pli
+    # (pièce plate : sans effet sur le développé, non bloquante).
+    cotation_init, explication_cotation = cotation_initiale(piece.profil_pliage)
+    options_cotation = list(LIBELLES_COTATION)
+    cotation = st.selectbox(
+        "Cotes du profil",
+        options_cotation,
+        index=options_cotation.index(cotation_init) if cotation_init else None,
+        format_func=LIBELLES_COTATION.__getitem__,
+        placeholder="À choisir",
+    )
+    a_des_plis = any(
+        _ligne_remplie(ligne) and ligne.get("type") == "pli" for ligne in lignes_profil_editees
+    )
+    cotation_manquante = cotation is None and a_des_plis
+    st.caption(("⛔ " if cotation_manquante else "") + explication_cotation)
 
     st.caption("Trous (rond : diamètre ; oblong/carré/rectangulaire : longueur × largeur)")
     tableau_trous = st.data_editor(
@@ -1038,6 +1081,8 @@ def _editer_piece(
     ]
     if erreur_profil:
         erreurs.append(erreur_profil)
+    if cotation_manquante:
+        erreurs.append(explication_cotation)
     erreurs += _valider_lignes(lignes_profil_editees, lignes_trous_editees)
     if erreurs:
         return None, matiere_id, erreurs
@@ -1068,7 +1113,9 @@ def _editer_piece(
     # Tableau vidé → plus de profil : jamais de retour silencieux à l'extrait.
     editee.profil_pliage = (
         ProfilPliage(
-            cotation=piece.profil_pliage.cotation if piece.profil_pliage else "exterieure",
+            # « inconnue » seulement pour une pièce plate (cotation sans effet) :
+            # plus de bascule silencieuse vers « exterieure » (issue #69).
+            cotation=cotation or "inconnue",
             rayon_pliage_general=rayon_general,
             elements=elements,
         )

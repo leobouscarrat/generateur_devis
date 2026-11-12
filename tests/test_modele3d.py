@@ -162,8 +162,10 @@ def test_cotation_inconnue_erreur():
     piece = _piece(
         [Aile(longueur=30.0), Pli(angle=90.0), Aile(longueur=20.0)], cotation="inconnue"
     )
-    with pytest.raises(ErreurGeometrie, match="Cotation du profil inconnue"):
+    with pytest.raises(ErreurGeometrie, match="Cotation du profil inconnue") as exc:
         construire_profil_2d(piece, FACTEUR_K)
+    assert "BA" not in str(exc.value) and "BD" not in str(exc.value)
+    assert "extérieur" in str(exc.value) and "intérieur" in str(exc.value)
 
 
 def test_rayon_non_cote_erreur():

@@ -74,7 +74,10 @@ def construire_profil_2d(piece: PieceExtraite, facteur_k: float) -> list[Point2D
         return [(0.0, 0.0), (aile.longueur, 0.0)]
 
     if profil.cotation == "inconnue":
-        msg = "Cotation du profil inconnue : impossible de construire le modèle 3D."
+        msg = (
+            "Cotation du profil inconnue : indiquez si les longueurs d'ailes sont "
+            "cotées à l'extérieur ou à l'intérieur des plis."
+        )
         raise ErreurGeometrie(msg)
 
     epaisseur = piece.matiere.epaisseur.valeur

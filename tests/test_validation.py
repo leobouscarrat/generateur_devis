@@ -7,6 +7,8 @@ géométrie → faisabilité → chiffrage → contrôles sur une pièce modifi�
 
 from __future__ import annotations
 
+from typing import get_args
+
 import pandas as pd
 import pytest
 from pydantic import ValidationError
@@ -38,6 +40,7 @@ from generateur_devis.ui.app import (
     CLE_PROPOSITION,
     CLE_RESULTAT,
     CLES_VALIDATION,
+    LIBELLES_COTATION,
     LectureComposants,
     MatiereInitiale,
     Rattachement,
@@ -46,6 +49,7 @@ from generateur_devis.ui.app import (
     _editer_piece,
     _ligne_remplie,
     _valider_lignes,
+    cotation_initiale,
     erreur_profil_vide,
     explication_profil,
     libelle_composant,
@@ -468,6 +472,96 @@ def test_editer_piece_ligne_neuve_nan_sans_trou_fantome(monkeypatch):
     ]
     assert editee.profil_pliage is not None
     assert len(editee.profil_pliage.elements) == 1
+
+
+# --- Cotes du profil corrigeables à l'écran (issue #69) ---------------------
+
+
+@pytest.mark.parametrize("cotation", ["exterieure", "interieure"])
+def test_cotation_initiale_lue_sur_le_plan(cotation):
+    profil = piece_support(MATIERE).profil_pliage
+    profil.cotation = cotation
+    assert cotation_initiale(profil) == (cotation, "Cotes du profil : lues sur le plan.")
+
+
+def test_cotation_initiale_inconnue_vide_sans_jargon():
+    profil = piece_support(MATIERE).profil_pliage
+    profil.cotation = "inconnue"
+    valeur, explication = cotation_initiale(profil)
+    assert valeur is None
+    assert explication.startswith("Cotes du profil : non précisées sur le plan")
+    assert "extérieur" in explication and "intérieur" in explication
+    assert "BA" not in explication and "BD" not in explication
+
+
+def test_cotation_initiale_sans_profil_lu():
+    valeur, explication = cotation_initiale(None)
+    assert valeur is None
+    assert "pas de profil lu" in explication
+
+
+def test_libelles_cotation_couvrent_le_schema():
+    """Garde-fou : toute évolution du Literal du schéma force une décision."""
+    schema = set(get_args(ProfilPliage.model_fields["cotation"].annotation))
+    assert set(LIBELLES_COTATION) | {"inconnue"} == schema
+
+
+def _faux_selectbox(cotation: str | None):
+    """Remplace st.selectbox pour « Cotes du profil » ; matière inchangée."""
+    import streamlit as st
+
+    vrai = st.selectbox
+
+    def selectbox(label, options, *args, **kwargs):
+        if label == "Cotes du profil":
+            return cotation
+        return vrai(label, options, *args, **kwargs)
+
+    return selectbox
+
+
+def test_editer_piece_cotation_inconnue_avec_plis_bloque():
+    piece = piece_support(MATIERE)
+    piece.profil_pliage.cotation = "inconnue"
+    editee, _, erreurs = _editer(piece)
+    assert editee is None
+    assert len(erreurs) == 1
+    assert erreurs[0].startswith("Cotes du profil : non précisées sur le plan")
+
+
+def test_editer_piece_cotation_choisie_reportee(monkeypatch):
+    piece = piece_support(MATIERE)
+    piece.profil_pliage.cotation = "inconnue"
+    monkeypatch.setattr("generateur_devis.ui.app.st.selectbox", _faux_selectbox("interieure"))
+    editee, _, erreurs = _editer(piece)
+    assert erreurs == []
+    assert editee.profil_pliage.cotation == "interieure"
+
+
+def test_editer_piece_cotation_inconnue_piece_plate_non_bloquante(monkeypatch):
+    piece = piece_support(MATIERE)
+    piece.profil_pliage.cotation = "inconnue"
+    profil = pd.DataFrame([_aile(75.0)], columns=["type", "longueur", "angle", "sens"])
+    monkeypatch.setattr("generateur_devis.ui.app.st.data_editor", _faux_data_editor(profil, None))
+    editee, _, erreurs = _editer(piece)
+    assert erreurs == []
+    assert editee.profil_pliage.cotation == "inconnue"
+
+
+def test_editer_piece_profil_saisi_main_sans_exterieure_silencieux(monkeypatch):
+    """Pas de profil lu, profil saisi avec un pli → choix de cotation exigé."""
+    piece = piece_support(MATIERE)
+    piece.profil_pliage = None
+    profil = pd.DataFrame(
+        [_aile(42.0), _pli(90.0), _aile(18.0)], columns=["type", "longueur", "angle", "sens"]
+    )
+    monkeypatch.setattr("generateur_devis.ui.app.st.data_editor", _faux_data_editor(profil, None))
+    editee, _, erreurs = _editer(piece)
+    assert editee is None
+    assert erreurs == [
+        "Cotes du profil : pas de profil lu sur le plan — indiquez si les longueurs "
+        "saisies sont prises à l'extérieur ou à l'intérieur des plis."
+    ]
 
 
 # --- Valeurs initiales des champs bornés (issue #58) -------------------------

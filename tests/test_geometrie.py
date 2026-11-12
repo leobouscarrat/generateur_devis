@@ -201,8 +201,11 @@ def test_cotation_inconnue_erreur():
     piece = piece_support()
     assert piece.profil_pliage is not None
     piece.profil_pliage.cotation = "inconnue"
-    with pytest.raises(ErreurGeometrie, match="Cotation du profil inconnue"):
+    with pytest.raises(ErreurGeometrie, match="Cotation du profil inconnue") as exc:
         construire_flan(piece, DENSITE_ACIER, FACTEUR_K)
+    # Message lisible par un deviseur : pas de jargon BA/BD (#69).
+    assert "BA" not in str(exc.value) and "BD" not in str(exc.value)
+    assert "extérieur" in str(exc.value) and "intérieur" in str(exc.value)
 
 
 def test_rayon_non_cote_erreur():

@@ -145,7 +145,10 @@ def longueur_developpee(piece: PieceExtraite, facteur_k: float) -> float:
             calculer_bd(p.angle, r, epaisseur, facteur_k) for p, r in zip(plis, rayons, strict=True)
         )
     else:
-        msg = "Cotation du profil inconnue : impossible de choisir entre BA et BD."
+        msg = (
+            "Cotation du profil inconnue : indiquez si les longueurs d'ailes sont "
+            "cotées à l'extérieur ou à l'intérieur des plis."
+        )
         raise ErreurGeometrie(msg)
 
     if developpe <= 0:
