@@ -29,6 +29,14 @@ from generateur_devis.ui.auth import verifier_identifiants
 CLE_PROPOSITION_ADMIN = "proposition_admin"
 CLE_AUTEUR = "admin_auteur"
 
+# Un F5 ouvre une nouvelle session Streamlit : connexion et proposition perdues (#93).
+AVERTISSEMENT_RECHARGEMENT_ADMIN = (
+    "Ne rechargez pas la page et n'utilisez pas le retour arrière du navigateur : "
+    "la proposition en attente serait perdue et vous seriez déconnecté. "
+    "Acceptez-la ou refusez-la d'abord."
+)
+MESSAGE_AUCUNE_MODIFICATION = "L'agent n'a proposé aucune modification. Reformulez la demande."
+
 
 def _comptes() -> dict[str, str]:
     """Comptes déclarés dans les secrets : ``[admin.utilisateurs]`` nom = mdp."""
@@ -107,7 +115,15 @@ def main() -> None:
                 st.rerun()
             except ErreurAdmin as e:
                 st.error(str(e))
+    elif not proposition.modifications:
+        # Demande refusée ou ambiguë : l'agent ne répond que par une remarque.
+        # Rien à accepter, donc ni tableau vide ni bouton « Accepter » (#93).
+        st.info(f"💬 {proposition.remarque or MESSAGE_AUCUNE_MODIFICATION}")
+        if st.button("Nouvelle demande"):
+            st.session_state.pop(CLE_PROPOSITION_ADMIN, None)
+            st.rerun()
     else:
+        st.caption("⚠️ " + AVERTISSEMENT_RECHARGEMENT_ADMIN)
         # --- Affichage avant / après (valeur actuelle lue en base) --------------
         if proposition.remarque:
             st.info(f"💬 {proposition.remarque}")
