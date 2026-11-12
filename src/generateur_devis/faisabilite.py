@@ -96,7 +96,7 @@ def evaluer_faisabilite(
                 regle="epaisseur_dispo",
                 severite="blocage",
                 message=(
-                    f"Épaisseur {e} mm non disponible pour {matiere_id} "
+                    f"Épaisseur {e:g} mm non disponible pour {matiere_id} "
                     f"(disponibles : {dispos_txt} mm)."
                 ),
                 champ="matiere.epaisseur",
@@ -130,7 +130,7 @@ def evaluer_faisabilite(
                 Constat(
                     regle="epaisseur_en_stock",
                     severite="alerte",
-                    message=f"Épaisseur {e} mm disponible mais pas en stock (délai d'appro).",
+                    message=f"Épaisseur {e:g} mm disponible mais pas en stock (délai d'appro).",
                     champ="matiere.epaisseur",
                 )
             )
@@ -144,7 +144,7 @@ def evaluer_faisabilite(
                     regle="diam_trou_min",
                     severite="alerte",
                     message=(
-                        f"Trou Ø{trou.diametre} mm < {k_trou:g} × épaisseur "
+                        f"Trou Ø{trou.diametre:g} mm < {k_trou:g} × épaisseur "
                         f"({k_trou * e:g} mm) : perçage difficile, à vérifier."
                     ),
                     champ=f"contours.trous[{i}]",
@@ -162,7 +162,7 @@ def evaluer_faisabilite(
                         regle="aile_min",
                         severite="alerte",
                         message=(
-                            f"Aile {element.longueur} mm < {k_aile:g} × épaisseur "
+                            f"Aile {element.longueur:g} mm < {k_aile:g} × épaisseur "
                             f"({k_aile * e:g} mm) : minimum de l'outillage, à vérifier."
                         ),
                         champ=f"profil_pliage.elements[{i}]",
@@ -182,7 +182,7 @@ def evaluer_faisabilite(
                             regle="rayon_min",
                             severite="alerte",
                             message=(
-                                f"Rayon {rayon} mm < {k_rayon:g} × épaisseur "
+                                f"Rayon {rayon:g} mm < {k_rayon:g} × épaisseur "
                                 f"({k_rayon * e:g} mm) : risque de fissuration, à vérifier."
                             ),
                             champ=f"profil_pliage.elements[{i}]",

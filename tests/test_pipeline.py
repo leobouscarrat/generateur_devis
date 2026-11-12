@@ -25,6 +25,7 @@ from generateur_devis.schema.piece import (
     Pli,
     ProfilPliage,
     Trou,
+    Unite,
 )
 from generateur_devis.ui import pipeline
 from generateur_devis.ui.pipeline import orchestrer_devis
@@ -201,3 +202,82 @@ def test_pipeline_client_marge_specifique(monkeypatch, session):
     )
     palier = resultat.chiffrage.paliers[0]
     assert palier.prix_unitaire_eur == pytest.approx(palier.cout_unitaire_eur / 0.82, rel=1e-9)
+
+
+# --- Plans en pouces (issue #57) ---------------------------------------------
+
+
+def piece_umaine_pouces() -> PieceExtraite:
+    """Le support coté en pouces : épaisseur 0,06 in (cas UMaine)."""
+    return PieceExtraite(
+        unites=Champ[Unite](valeur="in"),
+        matiere=Matiere(
+            designation=Champ[str](valeur=MATIERE), epaisseur=Champ[float](valeur=0.06)
+        ),
+        encombrement=Encombrement(largeur=Champ[float](valeur=2.36)),
+        profil_pliage=ProfilPliage(
+            cotation="exterieure",
+            rayon_pliage_general=0.08,
+            elements=[
+                Aile(longueur=1.65),
+                Pli(angle=90.0, sens="haut"),
+                Aile(longueur=0.87),
+                Pli(angle=90.0, sens="bas"),
+                Aile(longueur=0.71),
+            ],
+        ),
+        contours=Contours(trous=[Trou(forme="rond", diametre=0.75, quantite=2)]),
+    )
+
+
+def test_pipeline_plan_en_pouces_converti_avant_geometrie(monkeypatch, session):
+    """0,06 in → 1,524 mm : géométrie et faisabilité reçoivent des mm, rien n'est arrondi."""
+    _bouchon_extraction(monkeypatch, piece_umaine_pouces())
+    resultat = orchestrer_devis(b"%PDF-fake", "umaine.pdf", None, None, None, "test:m", session)
+
+    assert resultat.erreur is None
+    assert resultat.piece.unites.valeur == "mm"
+    assert resultat.piece.matiere.epaisseur.valeur == pytest.approx(1.524)
+    assert resultat.piece.contours.trous[0].diametre == pytest.approx(19.05)
+    # La géométrie a travaillé en mm (2,36 in = 59,944 mm ; 0,06 in = 1,524 mm).
+    assert resultat.flan.largeur_mm == pytest.approx(59.944)
+    assert resultat.flan.epaisseur_mm == pytest.approx(1.524)
+    # Pas d'arrondi vers l'épaisseur du stock : la faisabilité bloque proprement.
+    assert [c.regle for c in resultat.constats if c.severite == "blocage"] == ["epaisseur_dispo"]
+    blocage = next(c for c in resultat.constats if c.regle == "epaisseur_dispo")
+    assert blocage.message.startswith("Épaisseur 1.524 mm non disponible pour S235JR")
+    assert resultat.chiffrage is None
+    # Trace de la conversion.
+    assert resultat.conversion.unite_origine == "in"
+    traces = {v.chemin: (v.valeur_origine, v.valeur_mm) for v in resultat.conversion.valeurs}
+    assert traces["matiere.epaisseur.valeur"] == (0.06, pytest.approx(1.524))
+    assert traces["encombrement.largeur.valeur"] == (2.36, pytest.approx(59.944))
+    assert traces["profil_pliage.rayon_pliage_general"] == (0.08, pytest.approx(2.032))
+    assert len(resultat.conversion.valeurs) == 7
+
+
+def test_pipeline_pouces_sans_matiere_conversion_tracee(monkeypatch, session):
+    """Résultat partiel (matière absente) : pièce convertie et trace transmises."""
+    piece = piece_umaine_pouces()
+    piece.matiere.designation.valeur = None
+    _bouchon_extraction(monkeypatch, piece)
+    resultat = orchestrer_devis(b"%PDF-fake", "umaine.pdf", None, None, None, "test:m", session)
+    assert resultat.chiffrage is None
+    assert resultat.piece.matiere.epaisseur.valeur == pytest.approx(1.524)
+    assert resultat.conversion.unite_origine == "in"
+
+
+def test_pipeline_unite_non_lue_aucune_conversion(monkeypatch, session):
+    """piece_support (unites null) : rien de converti, chiffrage inchangé (non-régression)."""
+    _bouchon_extraction(monkeypatch, piece_support(MATIERE))
+    resultat = orchestrer_devis(b"%PDF-fake", "support.pdf", None, None, None, "test:m", session)
+    assert resultat.conversion.unite_origine is None
+    assert resultat.conversion.valeurs == []
+    assert resultat.piece == piece_support(MATIERE)
+    assert resultat.chiffrage is not None
+
+
+def test_pipeline_echec_extraction_sans_conversion(monkeypatch, session):
+    _bouchon_extraction(monkeypatch, None, erreur="JSON invalide")
+    resultat = orchestrer_devis(b"%PDF-fake", "support.pdf", None, None, None, "test:m", session)
+    assert resultat.conversion is None

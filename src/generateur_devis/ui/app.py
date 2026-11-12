@@ -52,6 +52,7 @@ from generateur_devis.ui.formatage import formater_valeur
 from generateur_devis.ui.pipeline import ResultatDevis, orchestrer_devis, rechiffrer
 from generateur_devis.ui.rendu3d import maillage_vers_figure
 from generateur_devis.ui.ventilation import lignes_trace, ventilation_couts
+from generateur_devis.unites import ConversionUnites, message_unites, valeur_origine
 
 TYPES_PLAN = ["pdf", "png", "jpg", "jpeg", "webp"]
 CLE_RESULTAT = "resultat_devis"
@@ -96,12 +97,18 @@ def _nombre_fr(valeur: float) -> str:
     return f"{valeur:g}".replace(".", ",")
 
 
+def _mm_fr(valeur: float) -> str:
+    """1.524 → « 1,52 » (précision d'affichage des mm, stockage exact)."""
+    return formater_valeur("valeur_mm", valeur).replace(".", ",")
+
+
 def valeur_initiale(
     libelle: str,
     lue: float | None,
     minimum: float,
     defaut: tuple[float, str] | None = None,
     unite: str = "mm",
+    lue_sur_plan: str | None = None,
 ) -> ValeurInitiale:
     """Valeur à pré-saisir dans un champ borné, avec l'origine de la valeur.
 
@@ -112,6 +119,9 @@ def valeur_initiale(
     - lue (ou défaut) < minimum, <= 0 ou NaN → champ vide, origine
       ``hors_bornes`` (bloquant). Jamais remplacée par le minimum en silence,
       et une lecture aberrante ne retombe pas sur le défaut.
+
+    ``lue_sur_plan`` : lecture d'origine quand ``lue`` vient d'une conversion
+    (ex. « 0,06 in », issue #57) — affichée « 0,06 in → 1,52 mm ».
     """
     minimum_txt = f"minimum {_nombre_fr(minimum)} {unite}"
     if lue is None and defaut is None:
@@ -127,11 +137,19 @@ def valeur_initiale(
             )
         return ValeurInitiale(valeur, "defaut", f"{libelle} : absent du plan, {desc}, à confirmer.")
     if not lue >= minimum:  # NaN compris
+        lu_txt = (
+            f"{lue_sur_plan} → {_mm_fr(lue)} {unite}"
+            if lue_sur_plan
+            else f"{_nombre_fr(lue)} {unite}"
+        )
         return ValeurInitiale(
             None,
             "hors_bornes",
-            f"{libelle} : valeur lue hors bornes : {_nombre_fr(lue)} {unite} "
-            f"({minimum_txt}), à saisir.",
+            f"{libelle} : valeur lue hors bornes : {lu_txt} ({minimum_txt}), à saisir.",
+        )
+    if lue_sur_plan:
+        return ValeurInitiale(
+            lue, "plan", f"{libelle} : lu sur le plan : {lue_sur_plan} → {_mm_fr(lue)} {unite}."
         )
     return ValeurInitiale(lue, "plan", f"{libelle} : lu sur le plan.")
 
@@ -296,6 +314,7 @@ def _champs_peu_surs(piece: PieceExtraite, session) -> list[str]:
     """
     seuil = float(get_parametre("seuil_confiance_champs", session))
     champs: list[tuple[str, Champ]] = [
+        ("unité du plan", piece.unites),
         ("matière (désignation)", piece.matiere.designation),
         ("épaisseur", piece.matiere.epaisseur),
         ("largeur d'encombrement", piece.encombrement.largeur),
@@ -633,8 +652,36 @@ def _champ_borne(
     return saisie
 
 
+def _en_pouces(
+    conversion: ConversionUnites | None, chemin: str, valeur: float | None
+) -> str | None:
+    """« 0,06 in » si la valeur actuelle est celle issue de la conversion (#57)."""
+    origine = valeur_origine(conversion, chemin, valeur)
+    return None if origine is None else f"{_nombre_fr(origine)} in"
+
+
+def _afficher_unites(conversion: ConversionUnites) -> None:
+    """Unité d'origine du plan, et valeurs converties en mm par le code (#57)."""
+    niveau, message = message_unites(conversion)
+    if niveau == "alerte":
+        st.warning(f"⚠️ {message}")
+        return
+    st.info(message)
+    if conversion.valeurs:
+        with st.expander("Valeurs converties"):
+            st.markdown(
+                "\n".join(
+                    f"- {v.chemin} : {_nombre_fr(v.valeur_origine)} in → {_mm_fr(v.valeur_mm)} mm"
+                    for v in conversion.valeurs
+                )
+            )
+
+
 def _editer_piece(
-    piece: PieceExtraite, choix_matieres: dict[str, str], matiere: MatiereInitiale
+    piece: PieceExtraite,
+    choix_matieres: dict[str, str],
+    matiere: MatiereInitiale,
+    conversion: ConversionUnites | None = None,
 ) -> tuple[PieceExtraite | None, str | None, list[str]]:
     """Formulaire borné V1 : matière, épaisseur, largeur, profil de pliage, trous.
 
@@ -648,14 +695,21 @@ def _editer_piece(
     """
     # Épaisseur et largeur : pas de défaut (une valeur arbitraire serait une
     # valeur en dur) — absente ou hors bornes → champ vide + ⛔ (issue #58).
+    # Plan en pouces : la lecture d'origine est rappelée sous le champ (#57).
+    epaisseur_lue = _lue(piece.matiere.epaisseur.valeur)
+    largeur_lue = _lue(piece.encombrement.largeur.valeur)
     initiales = {
         "Épaisseur (mm)": valeur_initiale(
-            "Épaisseur (mm)", _lue(piece.matiere.epaisseur.valeur), EPAISSEUR_MIN_MM
+            "Épaisseur (mm)",
+            epaisseur_lue,
+            EPAISSEUR_MIN_MM,
+            lue_sur_plan=_en_pouces(conversion, "matiere.epaisseur.valeur", epaisseur_lue),
         ),
         "Largeur d'encombrement (mm)": valeur_initiale(
             "Largeur d'encombrement (mm)",
-            _lue(piece.encombrement.largeur.valeur),
+            largeur_lue,
             LARGEUR_MIN_MM,
+            lue_sur_plan=_en_pouces(conversion, "encombrement.largeur.valeur", largeur_lue),
         ),
     }
     # Rayon général : cote du plan si extraite, sinon défaut atelier
@@ -669,7 +723,11 @@ def _editer_piece(
                 "paramètre rayon_pliage_defaut_mm",
             )
     initiales["Rayon de pliage général (mm)"] = valeur_initiale(
-        "Rayon de pliage général (mm)", _lue(rayon_extrait), RAYON_MIN_MM, defaut_rayon
+        "Rayon de pliage général (mm)",
+        _lue(rayon_extrait),
+        RAYON_MIN_MM,
+        defaut_rayon,
+        lue_sur_plan=_en_pouces(conversion, "profil_pliage.rayon_pliage_general", rayon_extrait),
     )
     if matiere.alerte:
         st.warning(matiere.alerte)
@@ -826,6 +884,9 @@ def ecran_validation() -> None:
     if piece_extraite is None:
         st.error(resultat_initial.erreur or "Aucune pièce extraite.")
         return
+    # Unité du plan avant le formulaire : visible même si la saisie est bloquée.
+    if resultat_initial.conversion is not None:
+        _afficher_unites(resultat_initial.conversion)
     # La pièce corrigée par l'assistant (acceptations précédentes) fait foi.
     piece: PieceExtraite = st.session_state.get(CLE_PIECE_CORRIGEE) or piece_extraite
     contexte = st.session_state.get(CLE_CONTEXTE, {})
@@ -845,7 +906,9 @@ def ecran_validation() -> None:
             choix_matieres.values(),
             corrigee=designation != piece_extraite.matiere.designation.valeur,
         )
-        editee, matiere_id, erreurs_saisie = _editer_piece(piece, choix_matieres, matiere)
+        editee, matiere_id, erreurs_saisie = _editer_piece(
+            piece, choix_matieres, matiere, resultat_initial.conversion
+        )
         if editee is None:
             for erreur in erreurs_saisie:
                 st.error(f"⛔ Saisie incomplète — {erreur}")

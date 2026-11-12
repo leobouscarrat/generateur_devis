@@ -13,6 +13,8 @@ Conventions :
 - matière absente du plan (et non fournie) → résultat **partiel sans
   chiffrage**, à compléter à la validation (4.3) ;
 - blocage faisabilité → chiffrage non calculé (les constats suffisent) ;
+- plan coté en pouces → pièce convertie en mm juste après l'extraction,
+  conversion tracée dans ``ResultatDevis.conversion`` (issue #57) ;
 - composants non chiffrés ici : leur référence n'est pas extraite du plan
   (tranché en 3.2), ils seront saisis à la validation.
 """
@@ -33,6 +35,7 @@ from generateur_devis.faisabilite import Constat, evaluer_faisabilite
 from generateur_devis.geometrie import ErreurGeometrie, Flan, construire_flan
 from generateur_devis.llm import creer_modele
 from generateur_devis.schema.piece import PieceExtraite
+from generateur_devis.unites import ConversionUnites, convertir_en_mm
 
 
 class ErreurPipeline(Exception):
@@ -54,6 +57,9 @@ class ResultatDevis(BaseModel):
     alertes_controles: list[Constat] = []
     erreur: str | None = None
     """Échec d'une étape (extraction illisible, géométrie impossible…)."""
+    conversion: ConversionUnites | None = None
+    """Unité d'origine et valeurs converties en mm (issue #57) ; None si l'extraction
+    a échoué ou depuis ``rechiffrer`` (la pièce y est déjà en mm)."""
 
     @property
     def bloque(self) -> bool:
@@ -114,16 +120,21 @@ def orchestrer_devis(
         return ResultatDevis(
             erreur=f"Extraction impossible : {extraction.erreur or 'aucune pièce extraite.'}"
         )
-    piece = extraction.piece
+    # Plan en pouces → mm, ici et pas dans extraire() : l'évaluation compare la
+    # sortie brute, dans l'unité du plan (issue #57). Avant matière, géométrie,
+    # faisabilité et chiffrage, qui travaillent tous en mm.
+    piece, conversion = convertir_en_mm(extraction.piece)
 
     try:
         matiere = _resoudre_matiere(piece, matiere_id, session)
     except ErreurPipeline as e:
-        return ResultatDevis(piece=piece, erreur=str(e))
+        return ResultatDevis(piece=piece, erreur=str(e), conversion=conversion)
     if matiere is None:
-        return ResultatDevis(piece=piece, matiere_id=None, erreur=None)
+        return ResultatDevis(piece=piece, matiere_id=None, erreur=None, conversion=conversion)
 
-    return rechiffrer(piece, matiere, client_id, quantites, session)
+    resultat = rechiffrer(piece, matiere, client_id, quantites, session)
+    resultat.conversion = conversion
+    return resultat
 
 
 def rechiffrer(

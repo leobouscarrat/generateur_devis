@@ -25,6 +25,7 @@ from generateur_devis.schema.piece import (
     Pli,
     ProfilPliage,
     Trou,
+    Unite,
 )
 from generateur_devis.ui.app import (
     CLE_CONTEXTE,
@@ -35,6 +36,7 @@ from generateur_devis.ui.app import (
     CLES_VALIDATION,
     MatiereInitiale,
     ValeurInitiale,
+    _champs_peu_surs,
     _valider_lignes,
     matiere_initiale,
     revenir_au_depot,
@@ -458,3 +460,39 @@ def test_matiere_initiale_invariants(depot, designation, corrigee):
     assert m.matiere_id is None or m.matiere_id in IDS_MATIERES
     if "304L" not in (depot, designation):
         assert m.matiere_id != "304L"
+
+
+# --- Plans en pouces : origine convertie (issue #57) --------------------------
+
+
+def test_valeur_initiale_lue_sur_plan_en_pouces():
+    resultat = valeur_initiale("Épaisseur (mm)", 1.524, 0.1, lue_sur_plan="0,06 in")
+    assert resultat == ValeurInitiale(
+        1.524, "plan", "Épaisseur (mm) : lu sur le plan : 0,06 in → 1,52 mm."
+    )
+
+
+def test_valeur_initiale_hors_bornes_en_pouces():
+    """0,002 in = 0,0508 mm < 0,1 mm : signalé avec la lecture d'origine."""
+    resultat = valeur_initiale("Épaisseur (mm)", 0.0508, 0.1, lue_sur_plan="0,002 in")
+    assert resultat.valeur is None
+    assert resultat.origine == "hors_bornes"
+    assert resultat.explication == (
+        "Épaisseur (mm) : valeur lue hors bornes : 0,002 in → 0,05 mm (minimum 0,1 mm), à saisir."
+    )
+
+
+def test_valeur_initiale_sans_lue_sur_plan_inchangee():
+    """Rétrocompatible : sans lecture en pouces, l'explication de #58 est inchangée."""
+    assert valeur_initiale("Épaisseur (mm)", 1.524, 0.1).explication == (
+        "Épaisseur (mm) : lu sur le plan."
+    )
+
+
+def test_champs_peu_surs_inclut_unite_du_plan(session):
+    """Unité lue avec une confiance sous seuil_confiance_champs (0,7 au seed)."""
+    piece = piece_support(MATIERE)
+    piece.unites = Champ[Unite](valeur="in", confiance=0.4)
+    assert "unité du plan : confiance 40%" in _champs_peu_surs(piece, session)
+    piece.unites = Champ[Unite](valeur="in", confiance=0.9)
+    assert not [c for c in _champs_peu_surs(piece, session) if c.startswith("unité du plan")]

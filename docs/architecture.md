@@ -127,6 +127,10 @@ Les signalements de l'IA sont donc affichés en premier à la validation, et dou
 | Positions de trous dans les limites de la pièce | Cote de position fausse |
 | Traitement compatible avec la famille de matière (table `traitements`) | Anodisation sur acier, galvanisation sur aluminium… |
 
+**Unités.** L'IA recopie les cotes dans l'unité du plan (`unites` : mm ou in) ; la conversion est faite **par le code** (`unites.py`), jamais par l'IA. Elle a lieu dans le pipeline du devis, juste après l'extraction et avant matière, géométrie, faisabilité et chiffrage — **pas dans `extraire()`** : l'évaluation compare la sortie brute aux vérités terrain, qui sont dans l'unité du plan. Sur un plan en pouces, toutes les longueurs de la pièce (épaisseur, encombrement, ailes, rayons, trous, coins, soudures, cotes linéaires, zones de tolérance géométrique) sont multipliées par 25,4 ; les angles, quantités, confiances, rugosités et textes restent tels quels. Chaque valeur convertie est tracée (chemin, valeur en pouces, valeur en mm) et l'écran de validation l'affiche (« lu sur le plan : 0,06 in → 1,52 mm »). Aucun arrondi vers une épaisseur du stock : 1,524 mm est signalé par la faisabilité, l'utilisateur corrige. Unité non lue → aucune conversion et alerte « unité non lue » affichée avant le formulaire. Écartés en V1 :
+- les **gauges** (16 ga, 24 ga) : la correspondance dépend de la matière (16 ga = 0,0598 in en acier, 0,0508 in en aluminium, 0,0635 in en galvanisé) ; il faudrait une table de référentiel, un champ au schéma et une règle de prompt. Les plans en pouces décimaux sont couverts sans elles ;
+- l'**heuristique « épaisseur < 0,3 → unité suspecte »** : l'alerte « unité non lue » est déjà inconditionnelle, et quand l'unité est lue une heuristique la contredirait sans preuve (les épaisseurs < 0,1 restent bloquées à la validation).
+
 ### Étape 3 — Géométrie et faisabilité
 
 **3a. Géométrie.** À partir des données extraites, le code construit :
