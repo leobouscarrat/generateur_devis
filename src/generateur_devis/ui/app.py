@@ -540,14 +540,19 @@ def ecran_depot() -> ResultatDevis | None:
                 nom_modele,
                 session,
             )
-        st.session_state[CLE_RESULTAT] = resultat
-        st.session_state[CLE_CONTEXTE] = {
-            "client_id": client_id,
-            "quantites": quantites,
-            "nom_modele": nom_modele,
-            "matiere_id": matiere_id,  # choix du dépôt, None si « (à extraire) »
-        }
-        st.rerun()
+        if resultat.piece is None:
+            # Aucune pièce (fichier illisible, extraction impossible) : on reste
+            # sur le dépôt, formulaire complet, pour déposer un autre fichier.
+            st.error(resultat.erreur or "Aucune pièce extraite.")
+        else:
+            st.session_state[CLE_RESULTAT] = resultat
+            st.session_state[CLE_CONTEXTE] = {
+                "client_id": client_id,
+                "quantites": quantites,
+                "nom_modele": nom_modele,
+                "matiere_id": matiere_id,  # choix du dépôt, None si « (à extraire) »
+            }
+            st.rerun()
 
     return st.session_state.get(CLE_RESULTAT)
 

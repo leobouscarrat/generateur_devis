@@ -281,3 +281,20 @@ def test_pipeline_echec_extraction_sans_conversion(monkeypatch, session):
     _bouchon_extraction(monkeypatch, None, erreur="JSON invalide")
     resultat = orchestrer_devis(b"%PDF-fake", "support.pdf", None, None, None, "test:m", session)
     assert resultat.conversion is None
+
+
+@pytest.mark.parametrize(("contenu", "nom"), [(b"", "vide.pdf"), (b"hello world", "faux.pdf")])
+def test_pipeline_fichier_illisible_sans_appel_modele(monkeypatch, session, contenu, nom):
+    """Issue #63 : vrai ``charger_plan`` ; le modèle ne doit jamais être sollicité."""
+
+    def interdit(*args, **kwargs):
+        raise AssertionError("modèle appelé")
+
+    monkeypatch.setattr(pipeline, "extraire", interdit)
+    monkeypatch.setattr(pipeline, "creer_modele", interdit)
+
+    resultat = orchestrer_devis(contenu, nom, None, None, None, "test:m", session)
+
+    assert resultat.erreur == "Fichier illisible ou vide : déposez un PDF ou une image de plan."
+    assert resultat.piece is None
+    assert "/" not in resultat.erreur and "tmp" not in resultat.erreur
