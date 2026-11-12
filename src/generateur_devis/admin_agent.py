@@ -32,6 +32,7 @@ from generateur_devis.data.tables import (
     Traitement,
     VitesseCoupe,
 )
+from generateur_devis.devis import marge_valide
 from generateur_devis.extraction.extracteur import extraire_json
 from generateur_devis.extraction.prompt import (
     prompt_systeme_admin,
@@ -306,8 +307,38 @@ def _valider_modification(modif: ModificationAdmin, session: Session) -> None:
         raise ErreurAdmin(msg)
     ligne = _trouver_ligne(modif.table, modif.ligne_id, session)
     del ligne  # l'existence est vérifiée ; la lecture sert à l'avant/après
+    if _est_marge(modif.table, modif.ligne_id, modif.champ):
+        # Avant la coercition : un texte non numérique (« 25 % ») sur un champ
+        # float reçoit le message des marges, pas « Valeur incompatible ».
+        _valider_marge(modif.table, modif.ligne_id, modif.champ, modif.valeur)
     valeur = _coercer(modif.table, modif.champ, modif.valeur)
     _valider_valeur(referentiel, modif.table, modif.champ, valeur, session)
+
+
+def _est_marge(table: str, ligne_id: str, champ: str) -> bool:
+    """Champs administrables qui portent une marge (bornés par `marge_valide`)."""
+    return (table, champ) == ("clients", "marge_specifique") or (
+        table == "parametres" and ligne_id == "marge_defaut" and champ == "valeur"
+    )
+
+
+def _valider_marge(table: str, ligne_id: str, champ: str, valeur: Any) -> None:
+    """Lève ErreurAdmin si `valeur` n'est pas une marge valide.
+
+    `parametres.valeur` est du texte : la valeur est convertie par `float()`.
+    Un texte non numérique (« 25 % », « 0,25 ») est refusé avec le même message.
+    """
+    try:
+        valide = marge_valide(float(valeur))
+    except (TypeError, ValueError):
+        valide = False
+    if not valide:
+        msg = (
+            f"Marge invalide pour {table}.{champ} « {ligne_id} » : {valeur!r}. "
+            "Une marge est une fraction comprise entre 0 (incluse) et 1 (exclue), "
+            "ex. 0.25 pour 25 %."
+        )
+        raise ErreurAdmin(msg)
 
 
 def _valider_valeur(
