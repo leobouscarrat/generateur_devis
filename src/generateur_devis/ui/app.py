@@ -652,13 +652,83 @@ def _ligne_remplie(ligne: dict) -> bool:
     )
 
 
+AIDE_PROFIL = (
+    "une ligne par aile et par pli, dans l'ordre de la vue de côté ; "
+    "pièce plate : une seule aile (longueur à plat)"
+)
+HORS_PERIMETRE_V1 = (
+    "pièce non décrite par un profil à plis parallèles (plis sur plusieurs côtés, "
+    "assemblage) : hors périmètre V1, utilisez « Retour au dépôt »"
+)
+
+
+def explication_profil(profil: ProfilPliage | None) -> str:
+    """Origine du contenu du tableau du profil, affichée sous le tableau (issue #59).
+
+    Toujours non vide : profil non lu → comment le saisir (pièce plate = une
+    seule aile) et le cas hors périmètre V1 ; profil lu → nombre d'ailes et de
+    plis. Un profil créé par l'assistant IA compte comme lu (la correction est
+    tracée dans le journal de l'assistant).
+    """
+    if profil is None:
+        return (
+            f"Profil de pliage : non lu sur le plan, à saisir — {AIDE_PROFIL}. "
+            f"Si {HORS_PERIMETRE_V1}."
+        )
+    n_ailes = sum(isinstance(e, Aile) for e in profil.elements)
+    n_plis = len(profil.elements) - n_ailes
+    return f"Profil de pliage : lu sur le plan ({n_ailes} aile(s), {n_plis} pli(s))."
+
+
+Cotation = Literal["exterieure", "interieure"]
+
+LIBELLES_COTATION: dict[str, str] = {
+    "exterieure": "extérieures (longueurs d'ailes prises à l'extérieur des plis)",
+    "interieure": "intérieures (longueurs d'ailes prises à l'intérieur des plis)",
+}
+
+
+def cotation_initiale(profil: ProfilPliage | None) -> tuple[Cotation | None, str]:
+    """Pré-sélection du champ « Cotes du profil » et son explication (issue #69).
+
+    Explication toujours non vide. Jamais de valeur par défaut : une cotation
+    se lit sur le plan, ce n'est pas une règle d'atelier.
+    """
+    if profil is None:
+        return None, (
+            "Cotes du profil : pas de profil lu sur le plan — indiquez si les "
+            "longueurs saisies sont prises à l'extérieur ou à l'intérieur des plis."
+        )
+    if profil.cotation == "inconnue":
+        return None, (
+            "Cotes du profil : non précisées sur le plan — indiquez si les longueurs "
+            "d'ailes sont cotées à l'extérieur ou à l'intérieur des plis."
+        )
+    return profil.cotation, "Cotes du profil : lues sur le plan."
+
+
+def erreur_profil_vide(lignes_profil: list[dict]) -> str | None:
+    """Erreur bloquante si aucune ligne du profil n'est remplie, sinon None.
+
+    Intercepte au formulaire le refus du moteur (« Profil de pliage absent »),
+    avec un message qui dit comment s'en sortir (issue #59).
+    """
+    if any(_ligne_remplie(ligne) for ligne in lignes_profil):
+        return None
+    return (
+        f"Profil de pliage vide : saisissez-le dans le tableau ci-dessus — {AIDE_PROFIL}. "
+        f"Si {HORS_PERIMETRE_V1}."
+    )
+
+
 def _valider_lignes(lignes_profil: list[dict], lignes_trous: list[dict]) -> list[str]:
     """Valide les lignes des data_editor — aucune suppression silencieuse.
 
     Schéma attendu (documenté pour la conversion DataFrame → schéma pièce) :
     - profil : ``type`` (« aile » | « pli »), ``longueur`` (aile, mm > 0),
       ``angle`` (pli, degrés, 0 < angle ≤ 180 : bornes de ``schema.piece.Pli``),
-      ``sens`` (pli, « haut » | « bas ») ; les lignes alternent aile, pli,
+      ``sens`` (pli, « haut » | « bas »), ``rayon`` (pli, mm >= RAYON_MIN_MM,
+      vide = rayon général ; interdit sur une aile) ; les lignes alternent aile, pli,
       aile… et finissent par une aile (une seule erreur, sur la 1re ligne
       fautive ; les lignes de type invalide sont exclues de ce contrôle) ;
     - trous : ``forme``, ``diametre`` (mm > 0), ``quantite`` (≥ 1).
@@ -678,10 +748,22 @@ def _valider_lignes(lignes_profil: list[dict], lignes_trous: list[dict]) -> list
             _nombre(ligne.get("angle")),
             ligne.get("sens"),
         )
+        rayon = _nombre(ligne.get("rayon"))
         if type_ == "aile":
             if longueur is None or longueur <= 0:
                 erreurs.append(f"Profil ligne {i} : aile sans longueur valide.")
+            if rayon is not None:
+                erreurs.append(
+                    f"Profil ligne {i} : une aile n'a pas de rayon — vider la cellule "
+                    "(le rayon se saisit sur la ligne du pli)."
+                )
         elif type_ == "pli":
+            if rayon is not None and not rayon >= RAYON_MIN_MM:
+                erreurs.append(
+                    f"Profil ligne {i} : rayon intérieur de {rayon:g} mm invalide "
+                    f"(minimum {_nombre_fr(RAYON_MIN_MM)} mm) — corriger, ou vider la "
+                    "cellule pour utiliser le rayon général."
+                )
             if angle is None:
                 erreurs.append(f"Profil ligne {i} : pli sans angle.")
             elif not 0 < angle <= 180:  # bornes du schéma (Pli.angle : gt=0, le=180)
@@ -860,6 +942,41 @@ def _en_pouces(
     return None if origine is None else f"{_nombre_fr(origine)} in"
 
 
+def explication_rayons_plis(
+    profil: ProfilPliage | None,
+    rayon_general: ValeurInitiale,
+    conversion: ConversionUnites | None = None,
+) -> str:
+    """Origine des rayons par pli, affichée sous le tableau du profil (issue #72).
+
+    Toujours non vide : la règle (cellule vide → rayon général, avec sa valeur
+    et son origine), puis les rayons propres aux plis lus sur le plan, repérés
+    par leur ligne initiale (index de l'élément + 1), avec la lecture en
+    pouces si le plan est en pouces.
+    """
+    if rayon_general.valeur is None:
+        general = "à saisir"
+    else:
+        origine = (
+            "lu sur le plan" if rayon_general.origine == "plan" else "défaut atelier, à confirmer"
+        )
+        general = f"{_nombre_fr(rayon_general.valeur)} mm, {origine}"
+    texte = (
+        f"Rayon intérieur : propre au pli s'il est coté ; cellule vide → rayon général ({general})."
+    )
+    lus = []
+    for i, element in enumerate(profil.elements if profil else []):
+        r = getattr(element, "rayon_interieur", None)
+        if r is None:
+            continue
+        pouces = _en_pouces(conversion, f"profil_pliage.elements[{i}].rayon_interieur", r)
+        valeur = f"{pouces} → {_mm_fr(r)} mm" if pouces else f"{_nombre_fr(r)} mm"
+        lus.append(f"ligne {i + 1} : {valeur}")
+    if lus:
+        return f"{texte} Lus sur le plan : {' ; '.join(lus)}."
+    return f"{texte} Aucun rayon propre à un pli lu sur le plan."
+
+
 def _afficher_unites(conversion: ConversionUnites) -> None:
     """Unité d'origine du plan, et valeurs converties en mm par le code (#57)."""
     niveau, message = message_unites(conversion)
@@ -974,15 +1091,27 @@ def _editer_piece(
         for element in piece.profil_pliage.elements:
             if isinstance(element, Aile):
                 lignes_profil.append(
-                    {"type": "aile", "longueur": element.longueur, "angle": None, "sens": None}
+                    {
+                        "type": "aile",
+                        "longueur": element.longueur,
+                        "angle": None,
+                        "sens": None,
+                        "rayon": None,
+                    }
                 )
             else:
                 lignes_profil.append(
-                    {"type": "pli", "longueur": None, "angle": element.angle, "sens": element.sens}
+                    {
+                        "type": "pli",
+                        "longueur": None,
+                        "angle": element.angle,
+                        "sens": element.sens,
+                        "rayon": element.rayon_interieur,
+                    }
                 )
     st.caption("Profil de pliage (une ligne par élément, dans l'ordre)")
     tableau_profil = st.data_editor(
-        pd.DataFrame(lignes_profil, columns=["type", "longueur", "angle", "sens"]),
+        pd.DataFrame(lignes_profil, columns=["type", "longueur", "angle", "sens", "rayon"]),
         num_rows="dynamic",
         key="editeur_profil",
         column_config={
@@ -994,8 +1123,38 @@ def _editer_piece(
             "sens": st.column_config.SelectboxColumn(
                 "sens", options=["haut", "bas", "inconnu"]
             ),
+            # Pas de min_value : une valeur aberrante reste visible et la
+            # validation la refuse avec un message (une seule borne, RAYON_MIN_MM).
+            "rayon": st.column_config.NumberColumn(
+                "Rayon intérieur (mm)",
+                help="Pli uniquement. Vide = rayon de pliage général.",
+            ),
         },
     )
+    lignes_profil_editees = tableau_profil.to_dict("records")
+    erreur_profil = erreur_profil_vide(lignes_profil_editees)
+    st.caption(("⛔ " if erreur_profil else "") + explication_profil(piece.profil_pliage))
+    st.caption(
+        explication_rayons_plis(
+            piece.profil_pliage, initiales["Rayon de pliage général (mm)"], conversion
+        )
+    )
+    # Cotation : pré-remplie si lue, sinon choix exigé dès qu'il y a un pli
+    # (pièce plate : sans effet sur le développé, non bloquante).
+    cotation_init, explication_cotation = cotation_initiale(piece.profil_pliage)
+    options_cotation = list(LIBELLES_COTATION)
+    cotation = st.selectbox(
+        "Cotes du profil",
+        options_cotation,
+        index=options_cotation.index(cotation_init) if cotation_init else None,
+        format_func=LIBELLES_COTATION.__getitem__,
+        placeholder="À choisir",
+    )
+    a_des_plis = any(
+        _ligne_remplie(ligne) and ligne.get("type") == "pli" for ligne in lignes_profil_editees
+    )
+    cotation_manquante = cotation is None and a_des_plis
+    st.caption(("⛔ " if cotation_manquante else "") + explication_cotation)
 
     st.caption("Trous (rond : diamètre ; oblong/carré/rectangulaire : longueur × largeur)")
     tableau_trous = st.data_editor(
@@ -1024,7 +1183,6 @@ def _editer_piece(
     )
 
     elements: list[Aile | Pli] = []
-    lignes_profil_editees = tableau_profil.to_dict("records")
     lignes_trous_editees = tableau_trous.to_dict("records")
     erreurs = [matiere.explication] if matiere_id is None else []
     erreurs += [
@@ -1034,6 +1192,10 @@ def _editer_piece(
         for libelle, saisie in zip(initiales, (epaisseur, largeur, rayon_general), strict=True)
         if saisie is None
     ]
+    if erreur_profil:
+        erreurs.append(erreur_profil)
+    if cotation_manquante:
+        erreurs.append(explication_cotation)
     erreurs += _valider_lignes(lignes_profil_editees, lignes_trous_editees)
     if erreurs:
         return None, matiere_id, erreurs
@@ -1044,7 +1206,13 @@ def _editer_piece(
         if ligne["type"] == "aile":
             elements.append(Aile(longueur=float(ligne["longueur"])))
         else:
-            elements.append(Pli(angle=float(ligne["angle"]), sens=ligne["sens"]))
+            elements.append(
+                Pli(
+                    angle=float(ligne["angle"]),
+                    sens=ligne["sens"],
+                    rayon_interieur=_nombre(ligne.get("rayon")),
+                )
+            )
     trous = [
         Trou(
             forme=ligne["forme"] or "rond",
@@ -1064,7 +1232,9 @@ def _editer_piece(
     # Tableau vidé → plus de profil : jamais de retour silencieux à l'extrait.
     editee.profil_pliage = (
         ProfilPliage(
-            cotation=piece.profil_pliage.cotation if piece.profil_pliage else "exterieure",
+            # « inconnue » seulement pour une pièce plate (cotation sans effet) :
+            # plus de bascule silencieuse vers « exterieure » (issue #69).
+            cotation=cotation or "inconnue",
             rayon_pliage_general=rayon_general,
             elements=elements,
         )

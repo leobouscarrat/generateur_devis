@@ -7,6 +7,8 @@ géométrie → faisabilité → chiffrage → contrôles sur une pièce modifi�
 
 from __future__ import annotations
 
+from typing import get_args
+
 import pandas as pd
 import pytest
 from pydantic import ValidationError
@@ -16,6 +18,7 @@ from sqlalchemy.orm import sessionmaker
 from generateur_devis.data.acces import list_composants
 from generateur_devis.data.seed import seed
 from generateur_devis.data.tables import Base
+from generateur_devis.geometrie import ErreurGeometrie, rayon_pli
 from generateur_devis.modele3d import construire_modele_3d
 from generateur_devis.schema.piece import (
     Aile,
@@ -40,6 +43,7 @@ from generateur_devis.ui.app import (
     CLE_RESULTAT,
     CLES_VALIDATION,
     LIBELLES_ANOMALIE,
+    LIBELLES_COTATION,
     LectureComposants,
     MatiereInitiale,
     Rattachement,
@@ -48,6 +52,10 @@ from generateur_devis.ui.app import (
     _editer_piece,
     _ligne_remplie,
     _valider_lignes,
+    cotation_initiale,
+    erreur_profil_vide,
+    explication_profil,
+    explication_rayons_plis,
     libelle_composant,
     lignes_anomalies,
     lire_composants,
@@ -58,6 +66,7 @@ from generateur_devis.ui.app import (
 )
 from generateur_devis.ui.pipeline import rechiffrer
 from generateur_devis.ui.rendu3d import maillage_vers_figure
+from generateur_devis.unites import ConversionUnites, ValeurConvertie
 
 MATIERE = "S235JR"
 FACTEUR_K = 0.40
@@ -387,14 +396,62 @@ def _editer(piece: PieceExtraite):
     return _editer_piece(piece, choix, matiere)
 
 
-def test_editer_piece_profil_vide_donne_profil_none(monkeypatch):
-    """Toutes les lignes du profil supprimées → profil None, pas le profil extrait."""
+def test_editer_piece_profil_vide_bloque_au_formulaire(monkeypatch):
+    """Toutes les lignes du profil supprimées → erreur qui guide (#59), jamais le
+    profil extrait conservé en silence (#65)."""
     vide = pd.DataFrame([], columns=["type", "longueur", "angle", "sens"])
     monkeypatch.setattr("generateur_devis.ui.app.st.data_editor", _faux_data_editor(vide, None))
     editee, _, erreurs = _editer(piece_support(MATIERE))
+    assert editee is None
+    assert len(erreurs) == 1
+    assert erreurs[0].startswith("Profil de pliage vide : saisissez-le")
+
+
+# --- Profil absent ou vide : message qui guide (issue #59) -------------------
+
+
+def test_explication_profil_non_lu_guide_et_nomme_hors_perimetre():
+    texte = explication_profil(None)
+    assert texte.startswith("Profil de pliage : non lu sur le plan, à saisir")
+    assert "une seule aile" in texte
+    assert "hors périmètre V1" in texte
+    assert "Retour au dépôt" in texte
+
+
+def test_explication_profil_lu_compte_ailes_et_plis():
+    profil = piece_support(MATIERE).profil_pliage
+    assert explication_profil(profil) == (
+        "Profil de pliage : lu sur le plan (3 aile(s), 2 pli(s))."
+    )
+
+
+@pytest.mark.parametrize(
+    "lignes",
+    [[], [{"type": None, "longueur": NAN, "angle": NAN, "sens": None}]],
+)
+def test_erreur_profil_vide_guide(lignes):
+    erreur = erreur_profil_vide(lignes)
+    assert erreur is not None
+    assert "saisissez" in erreur
+    assert "une seule aile" in erreur
+    assert "hors périmètre V1" in erreur
+
+
+def test_erreur_profil_vide_aucune_si_une_aile():
+    lignes = [{"type": "aile", "longueur": 75.0, "angle": None, "sens": None}]
+    assert erreur_profil_vide(lignes) is None
+
+
+def test_editer_piece_profil_non_lu_puis_aile_saisie_piece_plate(monkeypatch):
+    """Profil non lu, une aile saisie → recalcul débloqué (pièce plate)."""
+    piece = piece_support(MATIERE)
+    piece.profil_pliage = None
+    profil = pd.DataFrame([_aile(75.0)], columns=["type", "longueur", "angle", "sens"])
+    monkeypatch.setattr("generateur_devis.ui.app.st.data_editor", _faux_data_editor(profil, None))
+    editee, _, erreurs = _editer(piece)
     assert erreurs == []
     assert editee is not None
-    assert editee.profil_pliage is None
+    assert [e.longueur for e in editee.profil_pliage.elements] == [75.0]
 
 
 def test_editer_piece_ligne_neuve_nan_sans_trou_fantome(monkeypatch):
@@ -421,6 +478,216 @@ def test_editer_piece_ligne_neuve_nan_sans_trou_fantome(monkeypatch):
     ]
     assert editee.profil_pliage is not None
     assert len(editee.profil_pliage.elements) == 1
+
+
+# --- Cotes du profil corrigeables à l'écran (issue #69) ---------------------
+
+
+@pytest.mark.parametrize("cotation", ["exterieure", "interieure"])
+def test_cotation_initiale_lue_sur_le_plan(cotation):
+    profil = piece_support(MATIERE).profil_pliage
+    profil.cotation = cotation
+    assert cotation_initiale(profil) == (cotation, "Cotes du profil : lues sur le plan.")
+
+
+def test_cotation_initiale_inconnue_vide_sans_jargon():
+    profil = piece_support(MATIERE).profil_pliage
+    profil.cotation = "inconnue"
+    valeur, explication = cotation_initiale(profil)
+    assert valeur is None
+    assert explication.startswith("Cotes du profil : non précisées sur le plan")
+    assert "extérieur" in explication and "intérieur" in explication
+    assert "BA" not in explication and "BD" not in explication
+
+
+def test_cotation_initiale_sans_profil_lu():
+    valeur, explication = cotation_initiale(None)
+    assert valeur is None
+    assert "pas de profil lu" in explication
+
+
+def test_libelles_cotation_couvrent_le_schema():
+    """Garde-fou : toute évolution du Literal du schéma force une décision."""
+    schema = set(get_args(ProfilPliage.model_fields["cotation"].annotation))
+    assert set(LIBELLES_COTATION) | {"inconnue"} == schema
+
+
+def _faux_selectbox(cotation: str | None):
+    """Remplace st.selectbox pour « Cotes du profil » ; matière inchangée."""
+    import streamlit as st
+
+    vrai = st.selectbox
+
+    def selectbox(label, options, *args, **kwargs):
+        if label == "Cotes du profil":
+            return cotation
+        return vrai(label, options, *args, **kwargs)
+
+    return selectbox
+
+
+def test_editer_piece_cotation_inconnue_avec_plis_bloque():
+    piece = piece_support(MATIERE)
+    piece.profil_pliage.cotation = "inconnue"
+    editee, _, erreurs = _editer(piece)
+    assert editee is None
+    assert len(erreurs) == 1
+    assert erreurs[0].startswith("Cotes du profil : non précisées sur le plan")
+
+
+def test_editer_piece_cotation_choisie_reportee(monkeypatch):
+    piece = piece_support(MATIERE)
+    piece.profil_pliage.cotation = "inconnue"
+    monkeypatch.setattr("generateur_devis.ui.app.st.selectbox", _faux_selectbox("interieure"))
+    editee, _, erreurs = _editer(piece)
+    assert erreurs == []
+    assert editee.profil_pliage.cotation == "interieure"
+
+
+def test_editer_piece_cotation_inconnue_piece_plate_non_bloquante(monkeypatch):
+    piece = piece_support(MATIERE)
+    piece.profil_pliage.cotation = "inconnue"
+    profil = pd.DataFrame([_aile(75.0)], columns=["type", "longueur", "angle", "sens"])
+    monkeypatch.setattr("generateur_devis.ui.app.st.data_editor", _faux_data_editor(profil, None))
+    editee, _, erreurs = _editer(piece)
+    assert erreurs == []
+    assert editee.profil_pliage.cotation == "inconnue"
+
+
+def test_editer_piece_profil_saisi_main_sans_exterieure_silencieux(monkeypatch):
+    """Pas de profil lu, profil saisi avec un pli → choix de cotation exigé."""
+    piece = piece_support(MATIERE)
+    piece.profil_pliage = None
+    profil = pd.DataFrame(
+        [_aile(42.0), _pli(90.0), _aile(18.0)], columns=["type", "longueur", "angle", "sens"]
+    )
+    monkeypatch.setattr("generateur_devis.ui.app.st.data_editor", _faux_data_editor(profil, None))
+    editee, _, erreurs = _editer(piece)
+    assert editee is None
+    assert erreurs == [
+        "Cotes du profil : pas de profil lu sur le plan — indiquez si les longueurs "
+        "saisies sont prises à l'extérieur ou à l'intérieur des plis."
+    ]
+
+
+# --- Rayon propre à chaque pli (issue #72) -----------------------------------
+
+
+def _pli_r(rayon) -> dict:
+    return {"type": "pli", "longueur": None, "angle": 90.0, "sens": "haut", "rayon": rayon}
+
+
+@pytest.mark.parametrize("rayon", [3.0, None, NAN, 0.1])
+def test_valider_lignes_rayon_pli_accepte(rayon):
+    assert _valider_lignes([_aile(42.0), _pli_r(rayon), _aile(18.0)], []) == []
+
+
+@pytest.mark.parametrize("rayon", [0.0, -1.0, 0.05])
+def test_valider_lignes_rayon_pli_invalide(rayon):
+    erreurs = _valider_lignes([_aile(42.0), _pli_r(rayon), _aile(18.0)], [])
+    assert len(erreurs) == 1
+    assert "rayon intérieur" in erreurs[0]
+    assert "ligne 2" in erreurs[0]
+    assert "minimum 0,1 mm" in erreurs[0]
+
+
+def test_valider_lignes_rayon_sur_aile_refuse():
+    aile = {**_aile(42.0), "rayon": 5.0}
+    erreurs = _valider_lignes([aile, _pli_r(None), _aile(18.0)], [])
+    assert len(erreurs) == 1
+    assert "une aile n'a pas de rayon" in erreurs[0]
+    assert "ligne 1" in erreurs[0]
+
+
+@pytest.mark.parametrize("rayon", [3.0, 0.1])
+def test_rayon_accepte_au_formulaire_accepte_par_le_moteur(rayon):
+    """Garde-fou : ce que le formulaire laisse passer, le moteur l'accepte."""
+    assert _valider_lignes([_aile(42.0), _pli_r(rayon), _aile(18.0)], []) == []
+    assert rayon_pli(Pli(angle=90, sens="haut", rayon_interieur=rayon), None, 0) == rayon
+
+
+@pytest.mark.parametrize("rayon", [0.0, -1.0])
+def test_rayon_refuse_par_le_moteur_refuse_au_formulaire(rayon):
+    assert _valider_lignes([_aile(42.0), _pli_r(rayon), _aile(18.0)], []) != []
+    with pytest.raises(ErreurGeometrie):
+        rayon_pli(Pli(angle=90, sens="haut", rayon_interieur=rayon), None, 0)
+
+
+def _profil_rayons(rayon_pli_2: float | None) -> ProfilPliage:
+    return ProfilPliage(
+        cotation="exterieure",
+        rayon_pliage_general=2.0,
+        elements=[
+            Aile(longueur=42.0),
+            Pli(angle=90.0, sens="haut", rayon_interieur=rayon_pli_2),
+            Aile(longueur=18.0),
+        ],
+    )
+
+
+def test_explication_rayons_plis_regle_et_rayons_lus():
+    texte = explication_rayons_plis(
+        _profil_rayons(3.0), ValeurInitiale(2.0, "plan", "Rayon : lu sur le plan.")
+    )
+    assert "vide → rayon général (2 mm, lu sur le plan)" in texte
+    assert "Lus sur le plan : ligne 2 : 3 mm." in texte
+
+
+def test_explication_rayons_plis_defaut_atelier():
+    texte = explication_rayons_plis(_profil_rayons(None), ValeurInitiale(2.0, "defaut", "défaut"))
+    assert "(2 mm, défaut atelier, à confirmer)" in texte
+    assert "Aucun rayon propre à un pli lu sur le plan." in texte
+
+
+def test_explication_rayons_plis_general_a_saisir():
+    texte = explication_rayons_plis(None, ValeurInitiale(None, "absente", "à saisir"))
+    assert "rayon général (à saisir)" in texte
+    assert "Aucun rayon propre à un pli" in texte
+
+
+def test_explication_rayons_plis_lecture_en_pouces():
+    conversion = ConversionUnites(
+        unite_origine="in",
+        valeurs=[
+            ValeurConvertie(
+                chemin="profil_pliage.elements[1].rayon_interieur",
+                valeur_origine=0.08,
+                valeur_mm=2.032,
+            )
+        ],
+    )
+    texte = explication_rayons_plis(
+        _profil_rayons(2.032), ValeurInitiale(2.0, "plan", "lu"), conversion
+    )
+    assert "ligne 2 : 0,08 in → 2,03 mm" in texte
+
+
+def test_editer_piece_conserve_le_rayon_du_pli():
+    """Tableau initial rendu tel quel : le rayon propre au pli survit."""
+    piece = piece_support(MATIERE)
+    piece.profil_pliage.elements[1].rayon_interieur = 3.0
+    editee, _, erreurs = _editer(piece)
+    assert erreurs == []
+    assert [getattr(e, "rayon_interieur", "aile") for e in editee.profil_pliage.elements] == [
+        "aile",
+        3.0,
+        "aile",
+        None,
+        "aile",
+    ]
+
+
+def test_editer_piece_cellule_rayon_videe_donne_rayon_general(monkeypatch):
+    piece = piece_support(MATIERE)
+    piece.profil_pliage.elements[1].rayon_interieur = 3.0
+    profil = pd.DataFrame(
+        [_aile(42.0), _pli_r(NAN), _aile(18.0)],
+        columns=["type", "longueur", "angle", "sens", "rayon"],
+    )
+    monkeypatch.setattr("generateur_devis.ui.app.st.data_editor", _faux_data_editor(profil, None))
+    editee, _, erreurs = _editer(piece)
+    assert erreurs == []
+    assert editee.profil_pliage.elements[1].rayon_interieur is None
 
 
 # --- Valeurs initiales des champs bornés (issue #58) -------------------------
