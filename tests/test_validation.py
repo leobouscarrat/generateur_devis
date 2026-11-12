@@ -19,6 +19,7 @@ from generateur_devis.data.tables import Base
 from generateur_devis.modele3d import construire_modele_3d
 from generateur_devis.schema.piece import (
     Aile,
+    Anomalie,
     Champ,
     CoinCoupe,
     Composant,
@@ -38,6 +39,7 @@ from generateur_devis.ui.app import (
     CLE_PROPOSITION,
     CLE_RESULTAT,
     CLES_VALIDATION,
+    LIBELLES_ANOMALIE,
     LectureComposants,
     MatiereInitiale,
     Rattachement,
@@ -47,6 +49,7 @@ from generateur_devis.ui.app import (
     _ligne_remplie,
     _valider_lignes,
     libelle_composant,
+    lignes_anomalies,
     lire_composants,
     matiere_initiale,
     proposer_rattachement,
@@ -805,3 +808,35 @@ def test_lire_composants_meme_reference_deux_lignes():
 def test_lire_composants_vide():
     lecture = lire_composants([], [], {})
     assert lecture == LectureComposants([], [], [], [])
+
+
+# --- Anomalies signalées par l'IA (issue #64) ------------------------------------
+
+
+def test_lignes_anomalies_libelle_et_ordre():
+    piece = piece_support(MATIERE)
+    piece.anomalies = [
+        Anomalie(
+            type="information_manquante",
+            champ="matiere.designation",
+            description="matière non indiquée sur le plan",
+        ),
+        Anomalie(type="incoherence", champ=None, description="cotes contradictoires"),
+    ]
+    assert lignes_anomalies(piece) == [
+        "Information manquante : matière non indiquée sur le plan",
+        "Incohérence : cotes contradictoires",
+    ]
+
+
+def test_lignes_anomalies_aucune():
+    assert lignes_anomalies(piece_support(MATIERE)) == []
+
+
+def test_libelles_anomalie_couvrent_le_schema():
+    """Garde-fou : tout type d'anomalie du schéma a un libellé, et rien de plus."""
+    from typing import get_args
+
+    types = set(get_args(Anomalie.model_fields["type"].annotation))
+    assert types == {"information_manquante", "incoherence", "illisible", "autre"}
+    assert set(LIBELLES_ANOMALIE) == types
